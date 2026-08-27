@@ -127,6 +127,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // have a valid Authorization header even before /auth/me completes.
       setApiToken(token);
 
+      // Only re-fetch /auth/me on a genuine new sign-in. All other events
+      // (TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION) are background
+      // lifecycle events — just update the token above and return silently
+      // so switching tabs never triggers a loading screen or re-fetch.
+      if (event !== "SIGNED_IN") return;
+
       setLoading(true);
       try {
         const me = await fetchMeFromApi(token);

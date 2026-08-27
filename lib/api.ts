@@ -75,7 +75,11 @@ export async function api<T>(
     let detail = res.statusText;
     try {
       const err = await res.json();
-      detail = err.detail ?? JSON.stringify(err);
+      if (Array.isArray(err.detail)) {
+        detail = err.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join("; ");
+      } else {
+        detail = err.detail ?? JSON.stringify(err);
+      }
     } catch {
       /* ignore */
     }
@@ -106,7 +110,11 @@ export async function apiBlob(
     let detail = res.statusText;
     try {
       const err = await res.json();
-      detail = err.detail ?? JSON.stringify(err);
+      if (Array.isArray(err.detail)) {
+        detail = err.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join("; ");
+      } else {
+        detail = err.detail ?? JSON.stringify(err);
+      }
     } catch {
       /* ignore */
     }

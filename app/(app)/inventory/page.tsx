@@ -126,6 +126,16 @@ export default function InventoryPage() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
+  /* ── Convert to Finished Good modal ─────────────────────────────────── */
+  const [convertTarget, setConvertTarget] = useState<Material | null>(null);
+  const [cvQty, setCvQty] = useState("");
+  const [cvName, setCvName] = useState("");
+  const [cvCode, setCvCode] = useState("");
+  const [cvCategory, setCvCategory] = useState("");
+  const [cvNotes, setCvNotes] = useState("");
+  const [converting, setConverting] = useState(false);
+  const [convertError, setConvertError] = useState<string | null>(null);
+
   /* ── Load materials ──────────────────────────────────────────────────── */
   const loadMaterials = useCallback(() => {
     setLoading(true);
@@ -261,6 +271,51 @@ export default function InventoryPage() {
     setAddCost("");
     setAddError(null);
     setShowAdd(false);
+  }
+
+  function openConvert(m: Material) {
+    setConvertTarget(m);
+    setCvQty("");
+    setCvName(m.name);
+    setCvCode("");
+    setCvCategory("");
+    setCvNotes("");
+    setConvertError(null);
+  }
+
+  function closeConvert() {
+    setConvertTarget(null);
+    setConvertError(null);
+  }
+
+  async function handleConvert(e: FormEvent) {
+    e.preventDefault();
+    if (!convertTarget) return;
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const result = await api<{ material: Material; finished_good: object }>(
+        `/api/v1/materials/${convertTarget.id}/convert`,
+        {
+          method: "POST",
+          json: {
+            quantity: parseFloat(cvQty),
+            product_name: cvName.trim(),
+            product_code: cvCode.trim() || null,
+            product_category: cvCategory.trim() || null,
+            notes: cvNotes.trim() || null,
+          },
+        },
+      );
+      setMaterials((prev) =>
+        prev.map((m) => (m.id === convertTarget.id ? result.material : m)),
+      );
+      closeConvert();
+    } catch (e) {
+      setConvertError(e instanceof Error ? e.message : "Conversion failed.");
+    } finally {
+      setConverting(false);
+    }
   }
 
   /* ─────────────────────────────────────────────────────────────────────
@@ -627,17 +682,28 @@ export default function InventoryPage() {
                         {fmtINR(m.length_weight_nos * m.per_unit_cost)}
                       </td>
 
-                      {/* Edit button — disabled while another row is being edited */}
+                      {/* Actions */}
                       <td className="px-4 py-3.5 text-right">
-                        <button
-                          type="button"
-                          title="Edit row"
-                          disabled={editId !== null}
-                          onClick={() => startEdit(m)}
-                          className="rounded-md border border-surface-border/70 px-2.5 py-1 text-base leading-none transition hover:border-accent/50 hover:bg-accent/10 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
-                        >
-                          ✏️
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            title="Convert to Finished Good"
+                            disabled={editId !== null || m.length_weight_nos <= 0}
+                            onClick={() => openConvert(m)}
+                            className="rounded-md border border-emerald-500/40 px-2.5 py-1 text-xs font-medium text-emerald-400 transition hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-30"
+                          >
+                            → FG
+                          </button>
+                          <button
+                            type="button"
+                            title="Edit row"
+                            disabled={editId !== null}
+                            onClick={() => startEdit(m)}
+                            className="rounded-md border border-surface-border/70 px-2.5 py-1 text-base leading-none transition hover:border-accent/50 hover:bg-accent/10 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
+                          >
+                            ✏️
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -844,6 +910,138 @@ export default function InventoryPage() {
           </>
         )}
       </div>
+
+      {/* ════════════════════════════════════════════════════════════════
+          Convert to Finished Good — modal overlay
+      ════════════════════════════════════════════════════════════════ */}
+      {convertTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-surface-border bg-[#0d1117] shadow-2xl">
+            {/* Modal header */}
+            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Convert to Finished Good</h2>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  From: <span className="text-slate-300">{convertTarget.name}</span>
+                  {" "}· Available: <span className="font-semibold text-emerald-400">{convertTarget.length_weight_nos} {convertTarget.unit}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeConvert}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal form */}
+            <form onSubmit={handleConvert} className="space-y-4 px-6 py-5">
+              {convertError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-400">
+                  ⚠ {convertError}
+                </div>
+              )}
+
+              {/* Quantity */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">
+                  Quantity to convert <span className="text-red-400">*</span>
+                  <span className="ml-1 text-slate-600">(max {convertTarget.length_weight_nos} {convertTarget.unit})</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0.001"
+                  max={convertTarget.length_weight_nos}
+                  required
+                  value={cvQty}
+                  onChange={(e) => setCvQty(e.target.value)}
+                  className={inputCls}
+                  placeholder={`0 – ${convertTarget.length_weight_nos}`}
+                  autoFocus
+                />
+              </div>
+
+              {/* FG Name */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">
+                  Finished Good Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cvName}
+                  onChange={(e) => setCvName(e.target.value)}
+                  className={inputCls}
+                  placeholder="e.g. Steel Bracket"
+                />
+              </div>
+
+              {/* Code + Category in a row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-400">Product Code</label>
+                  <input
+                    type="text"
+                    value={cvCode}
+                    onChange={(e) => setCvCode(e.target.value)}
+                    className={inputCls}
+                    placeholder="SKU-001"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-400">Category</label>
+                  <input
+                    type="text"
+                    value={cvCategory}
+                    onChange={(e) => setCvCategory(e.target.value)}
+                    className={inputCls}
+                    placeholder="e.g. Fabricated"
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">Notes</label>
+                <textarea
+                  rows={2}
+                  value={cvNotes}
+                  onChange={(e) => setCvNotes(e.target.value)}
+                  className={`${inputCls} resize-none`}
+                  placeholder="Optional — reason or batch info"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={closeConvert}
+                  className="rounded-lg border border-surface-border px-4 py-2 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={converting || !cvQty || !cvName.trim()}
+                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {converting ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      Converting…
+                    </>
+                  ) : (
+                    "Convert → Finished Good"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

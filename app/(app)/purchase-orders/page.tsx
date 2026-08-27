@@ -27,6 +27,8 @@ type POLine = {
   comment: string | null;
 };
 
+type AdditionalCost = { label: string; amount: number };
+
 type PODetail = {
   id: number;
   purchase_number: string;
@@ -38,6 +40,10 @@ type PODetail = {
   gst_rate: number;
   order_delivery_date: string | null;
   status: number;
+  remarks: string | null;
+  bill_numbers: string | null;
+  delivery_details: Record<string, string> | null;
+  additional_costs: AdditionalCost[];
   lines: POLine[];
 };
 
@@ -57,6 +63,7 @@ type Material = {
 };
 
 type DraftLine = {
+  lineId: number | null;
   material_name: string;
   length_weight_nos: string;
   per_unit_cost: string;
@@ -94,6 +101,7 @@ const STATUS_MAP: Record<number, { label: string; classes: string }> = {
 const UNITS = ["Nos", "Kg", "Meter", "Set"] as const;
 
 const BLANK_LINE: DraftLine = {
+  lineId: null,
   material_name: "",
   length_weight_nos: "",
   per_unit_cost: "",
@@ -233,6 +241,7 @@ export default function PurchaseOrdersPage() {
 
   // ── UI visibility ──────────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   // ── Save state ─────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
@@ -241,10 +250,20 @@ export default function PurchaseOrdersPage() {
   // ── PDF download state ─────────────────────────────────────────────────
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+
+  // ── Additional costs ──────────────────────────────────────────────────────
+  const [acItems, setAcItems] = useState<AdditionalCost[]>([]);
+  const [acLabelDraft, setAcLabelDraft] = useState("");
+  const [acAmountDraft, setAcAmountDraft] = useState("");
+  const [acDirty, setAcDirty] = useState(false);
+  const [acSaving, setAcSaving] = useState(false);
 
   // ── Receive state ────────────────────────────────────────────────────────
   const [receivingMode, setReceivingMode] = useState(false);
   const [receiveMap, setReceiveMap] = useState<Record<number, string>>({});
+  const [receiveBillNumbers, setReceiveBillNumbers] = useState<string[]>([]);
+  const [receiveBillDraft, setReceiveBillDraft] = useState("");
   const [receiving, setReceiving] = useState(false);
   const [receiveError, setReceiveError] = useState<string | null>(null);
 
@@ -256,6 +275,9 @@ export default function PurchaseOrdersPage() {
   const [fSupplierGSTIN, setFSupplierGSTIN] = useState("");
   const [fDeliveryDate, setFDeliveryDate] = useState("");
   const [fGSTRate, setFGSTRate] = useState("18");
+  const [fPaymentTerms, setFPaymentTerms] = useState("");
+  const [fTransportation, setFTransportation] = useState("");
+  const [fRemarks, setFRemarks] = useState("");
   const [draftLines, setDraftLines] = useState<DraftLine[]>([
     { ...BLANK_LINE },
   ]);
@@ -301,6 +323,8 @@ export default function PurchaseOrdersPage() {
     api<PODetail>(`/api/v1/purchase-orders/${id}`)
       .then((data) => {
         setDetail(data);
+        setAcItems(data.additional_costs ?? []);
+        setAcDirty(false);
         setDetailLoading(false);
       })
       .catch((e: Error) => {
@@ -318,6 +342,11 @@ export default function PurchaseOrdersPage() {
   }
 
   function openNewForm() {
+    setIsEditing(false);
+    setFPONumber(""); setFSupplierName(""); setFSupplierLocation("");
+    setFSupplierContact(""); setFSupplierGSTIN(""); setFDeliveryDate("");
+    setFGSTRate("18"); setFPaymentTerms(""); setFTransportation(""); setFRemarks(""); setDraftLines([{ ...BLANK_LINE }]);
+    setIsNewSupplier(false);
     setShowForm(true);
     setSelectedId(null);
     setDetail(null);
@@ -325,14 +354,43 @@ export default function PurchaseOrdersPage() {
     setSaveError(null);
   }
 
+  function startEdit() {
+    if (!detail) return;
+    setIsEditing(true);
+    setFPONumber(detail.purchase_number);
+    setFSupplierName(detail.supplier_name || "");
+    setFSupplierLocation(detail.supplier_location || "");
+    setFSupplierContact(detail.supplier_contact || "");
+    setFSupplierGSTIN(detail.supplier_gstin || "");
+    setFDeliveryDate(detail.order_delivery_date ? String(detail.order_delivery_date).slice(0, 10) : "");
+    setFGSTRate(String(detail.gst_rate ?? 18));
+    setFPaymentTerms(detail.delivery_details?.payment ?? "");
+    setFTransportation(detail.delivery_details?.transportation ?? "");
+    setFRemarks((detail as any).remarks || "");
+    setDraftLines(detail.lines.map((l) => ({
+      lineId: l.id,
+      material_name: l.material_name,
+      length_weight_nos: String(l.length_weight_nos),
+      per_unit_cost: String(l.per_unit_cost),
+      unit: l.unit || "Nos",
+      comment: l.comment || "",
+    })));
+    setIsNewSupplier(false);
+    setSaveError(null);
+    setShowForm(true);
+  }
+
   function closeForm() {
     setShowForm(false);
+    setIsEditing(false);
     setSaveError(null);
   }
 
   function handleReceiveToggle() {
     setReceivingMode(!receivingMode);
     setReceiveMap({});
+    setReceiveBillNumbers([]);
+    setReceiveBillDraft("");
     setReceiveError(null);
   }
 
@@ -352,11 +410,16 @@ export default function PurchaseOrdersPage() {
 
       const updated = await api<PODetail>(`/api/v1/purchase-orders/${detail.id}/receive`, {
         method: "POST",
-        json: { items },
+        json: {
+          items,
+          bill_numbers_to_add: receiveBillNumbers,
+        },
       });
       setDetail(updated);
       setReceivingMode(false);
       setReceiveMap({});
+      setReceiveBillNumbers([]);
+      setReceiveBillDraft("");
       loadList();
     } catch (e: any) {
       setReceiveError(e.message || "Failed to receive quantities.");
@@ -420,8 +483,9 @@ export default function PurchaseOrdersPage() {
         0,
       )
     : 0;
-  const detailGSTAmount = detail ? (detailSubtotal * detail.gst_rate) / 100 : 0;
-  const detailGrandTotal = detailSubtotal + detailGSTAmount;
+  const detailExtraCosts = acItems.reduce((s, c) => s + (c.amount || 0), 0);
+  const detailGSTAmount = detail ? ((detailSubtotal + detailExtraCosts) * detail.gst_rate) / 100 : 0;
+  const detailGrandTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
 
   const filteredRows = rows.filter((r) => {
     if (colFilters.po && !r.purchase_number.toLowerCase().includes(colFilters.po.toLowerCase())) return false;
@@ -430,35 +494,68 @@ export default function PurchaseOrdersPage() {
     return true;
   });
 
-  // ── Save new purchase order ────────────────────────────────────────────────
+  // ── Save purchase order (create or edit) ──────────────────────────────────
   async function handleSave(e: FormEvent) {
     e.preventDefault();
     setSaveError(null);
     setSaving(true);
     try {
-      const payload = {
-        purchase_number: fPONumber.trim(),
-        supplier_name: fSupplierName.trim(),
-        supplier_location: fSupplierLocation.trim() || "",
-        supplier_contact: fSupplierContact.trim() || "",
-        supplier_gstin: fSupplierGSTIN.trim() || null,
-        order_delivery_date: fDeliveryDate || null,
-        gst_rate: parseFloat(fGSTRate) || 18,
-        lines: draftLines.map((l) => ({
-          material_name: l.material_name.trim(),
-          length_weight_nos: parseFloat(l.length_weight_nos) || 0,
-          per_unit_cost: parseFloat(l.per_unit_cost) || 0,
-          unit: l.unit,
-          comment: l.comment.trim() || null,
-        })),
-      };
+      let saved: PODetail;
+      if (isEditing && selectedId !== null) {
+        const payload = {
+          supplier_name: fSupplierName.trim(),
+          supplier_location: fSupplierLocation.trim() || "",
+          supplier_contact: fSupplierContact.trim() || "",
+          supplier_gstin: fSupplierGSTIN.trim() || null,
+          order_delivery_date: fDeliveryDate || null,
+          gst_rate: parseFloat(fGSTRate) || 18,
+          delivery_details: {
+            ...(fPaymentTerms && { payment: fPaymentTerms }),
+            ...(fTransportation && { transportation: fTransportation }),
+          },
+          remarks: fRemarks.trim() || null,
+          lines: draftLines.map((l) => ({
+            id: l.lineId,
+            material_name: l.material_name.trim(),
+            length_weight_nos: parseFloat(l.length_weight_nos) || 0,
+            per_unit_cost: parseFloat(l.per_unit_cost) || 0,
+            unit: l.unit,
+            comment: l.comment.trim() || null,
+          })),
+        };
+        saved = await api<PODetail>(`/api/v1/purchase-orders/${selectedId}`, {
+          method: "PATCH",
+          json: payload,
+        });
+      } else {
+        const payload = {
+          purchase_number: fPONumber.trim(),
+          supplier_name: fSupplierName.trim(),
+          supplier_location: fSupplierLocation.trim() || "",
+          supplier_contact: fSupplierContact.trim() || "",
+          supplier_gstin: fSupplierGSTIN.trim() || null,
+          order_delivery_date: fDeliveryDate || null,
+          gst_rate: parseFloat(fGSTRate) || 18,
+          delivery_details: {
+            ...(fPaymentTerms && { payment: fPaymentTerms }),
+            ...(fTransportation && { transportation: fTransportation }),
+          },
+          remarks: fRemarks.trim() || null,
+          lines: draftLines.map((l) => ({
+            material_name: l.material_name.trim(),
+            length_weight_nos: parseFloat(l.length_weight_nos) || 0,
+            per_unit_cost: parseFloat(l.per_unit_cost) || 0,
+            unit: l.unit,
+            comment: l.comment.trim() || null,
+          })),
+        };
+        saved = await api<PODetail>("/api/v1/purchase-orders", {
+          method: "POST",
+          json: payload,
+        });
+      }
 
-      const created = await api<PODetail>("/api/v1/purchase-orders", {
-        method: "POST",
-        json: payload,
-      });
-
-      // Reset form fields
+      setIsEditing(false);
       setFPONumber("");
       setFSupplierName("");
       setFSupplierLocation("");
@@ -466,15 +563,13 @@ export default function PurchaseOrdersPage() {
       setFSupplierGSTIN("");
       setFDeliveryDate("");
       setFGSTRate("18");
+      setFRemarks("");
       setDraftLines([{ ...BLANK_LINE }]);
       setShowForm(false);
 
-      // Show the newly created PO in the detail panel
-      setSelectedId(created.id);
-      setDetail(created);
+      setSelectedId(saved.id);
+      setDetail(saved);
       setDetailError(null);
-
-      // Refresh the list so the new PO appears
       loadList();
     } catch (err) {
       setSaveError(
@@ -488,13 +583,14 @@ export default function PurchaseOrdersPage() {
   }
 
   // ── PDF download ────────────────────────────────────────────────────────────
-  async function handleDownloadPdf() {
+  async function handleDownloadPdf(variant: "normal" | "shop-floor") {
     if (!detail) return;
     setPdfLoading(true);
     setPdfError(null);
+    setPdfMenuOpen(false);
     try {
       const { blob, filename } = await apiBlob(
-        `/api/v1/purchase-orders/${detail.id}/pdf`,
+        `/api/v1/purchase-orders/${detail.id}/pdf?variant=${variant}`,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -684,11 +780,11 @@ export default function PurchaseOrdersPage() {
         <div className="flex shrink-0 items-center justify-between border-b border-surface-border px-5 py-3">
           <div>
             <h2 className="text-sm font-semibold text-white">
-              {showForm ? "New Purchase Order" : "Purchase Order Detail"}
+              {showForm ? (isEditing ? "Edit Purchase Order" : "New Purchase Order") : "Purchase Order Detail"}
             </h2>
             {showForm && (
               <p className="text-[11px] text-slate-500">
-                Fill in the details below and add material lines.
+                {isEditing ? "Update the fields below and save." : "Fill in the details below and add material lines."}
               </p>
             )}
             {!showForm && detail && (
@@ -730,6 +826,8 @@ export default function PurchaseOrdersPage() {
                       onChange={(e) => setFPONumber(e.target.value)}
                       placeholder="PO-2025-001"
                       required
+                      disabled={isEditing}
+                      className={isEditing ? "opacity-60 cursor-not-allowed" : ""}
                     />
                   </FormField>
                   <FormField label="Delivery Date">
@@ -831,6 +929,54 @@ export default function PurchaseOrdersPage() {
                       onChange={(e) => setFGSTRate(e.target.value)}
                     />
                   </FormField>
+                </div>
+              </section>
+
+              {/* ── Section: Delivery & Payment ── */}
+              <section>
+                <SectionHeading>Delivery &amp; Payment</SectionHeading>
+                <div className="mt-3 grid grid-cols-2 gap-4">
+                  <FormField label="Payment Terms">
+                    <select
+                      value={fPaymentTerms}
+                      onChange={(e) => setFPaymentTerms(e.target.value)}
+                      className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none transition focus:border-accent/70 focus:ring-1 focus:ring-accent/20"
+                    >
+                      <option value="">-- Select --</option>
+                      <option value="CREDIT">CREDIT</option>
+                      <option value="ADVANCE">ADVANCE</option>
+                      <option value="ON DELIVERY">ON DELIVERY</option>
+                      <option value="NET 30">NET 30</option>
+                      <option value="NET 60">NET 60</option>
+                    </select>
+                  </FormField>
+                  <FormField label="Transportation">
+                    <select
+                      value={fTransportation}
+                      onChange={(e) => setFTransportation(e.target.value)}
+                      className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none transition focus:border-accent/70 focus:ring-1 focus:ring-accent/20"
+                    >
+                      <option value="">-- Select --</option>
+                      <option value="PAID">PAID</option>
+                      <option value="TO PAY">TO PAY</option>
+                      <option value="INCLUDED">INCLUDED</option>
+                      <option value="NA">N/A</option>
+                    </select>
+                  </FormField>
+                </div>
+              </section>
+
+              {/* ── Section: Remarks ── */}
+              <section>
+                <SectionHeading>Remarks</SectionHeading>
+                <div className="mt-3">
+                  <textarea
+                    value={fRemarks}
+                    onChange={(e) => setFRemarks(e.target.value)}
+                    placeholder="Optional notes or remarks for this order…"
+                    rows={3}
+                    className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white placeholder-slate-600 outline-none transition focus:border-accent/70 focus:ring-1 focus:ring-accent/20 resize-none"
+                  />
                 </div>
               </section>
 
@@ -999,6 +1145,8 @@ export default function PurchaseOrdersPage() {
                       <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white" />
                       Saving…
                     </>
+                  ) : isEditing ? (
+                    "Update Purchase Order"
                   ) : (
                     "Save Purchase Order"
                   )}
@@ -1047,6 +1195,13 @@ export default function PurchaseOrdersPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <StatusBadge status={detail.status} />
+                      <button
+                        type="button"
+                        onClick={startEdit}
+                        className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-slate-400 hover:text-white"
+                      >
+                        Edit
+                      </button>
                       {detail.status !== 4 && detail.status !== 5 && (
                         <button
                           type="button"
@@ -1056,21 +1211,44 @@ export default function PurchaseOrdersPage() {
                           {receivingMode ? "Cancel Receive" : "Receive Items"}
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={handleDownloadPdf}
-                        disabled={pdfLoading}
-                        className="flex items-center gap-1.5 rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {pdfLoading ? (
-                          <>
-                            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/25 border-t-white" />
-                            Generating…
-                          </>
-                        ) : (
-                          <>↓ PDF</>
+                      <div className="relative">
+                        {pdfMenuOpen && (
+                          <div className="fixed inset-0 z-10" onClick={() => setPdfMenuOpen(false)} />
                         )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setPdfMenuOpen((o) => !o)}
+                          disabled={pdfLoading}
+                          className="flex items-center gap-1.5 rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-slate-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {pdfLoading ? (
+                            <>
+                              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/25 border-t-white" />
+                              Generating…
+                            </>
+                          ) : (
+                            <>↓ PDF ▾</>
+                          )}
+                        </button>
+                        {pdfMenuOpen && !pdfLoading && (
+                          <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-lg border border-surface-border bg-[#0f1419] py-1 shadow-xl">
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadPdf("normal")}
+                              className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:bg-surface-border/40 hover:text-white"
+                            >
+                              Normal PO
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadPdf("shop-floor")}
+                              className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:bg-surface-border/40 hover:text-white"
+                            >
+                              Shop Floor PO
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1129,6 +1307,25 @@ export default function PurchaseOrdersPage() {
                     </div>
                   </div>
 
+                  {/* ── Bill / Challan Numbers ── */}
+                  {(detail.bill_numbers ?? "").trim().length > 0 && (
+                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Bill / Challan Numbers
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {(detail.bill_numbers ?? "").split(",").map((b) => b.trim()).filter(Boolean).map((b) => (
+                          <span
+                            key={b}
+                            className="rounded-md border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 font-mono text-xs text-blue-300"
+                          >
+                            {b}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* ── Materials table ── */}
                   <section>
                     <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
@@ -1158,8 +1355,24 @@ export default function PurchaseOrdersPage() {
                               Subtotal
                             </th>
                             {receivingMode && (
-                              <th className="px-3.5 py-2.5 bg-accent/10 border-l border-surface-border text-center">
-                                Receive Qty
+                              <th className="px-3.5 py-2.5 bg-accent/10 border-l border-surface-border">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>Receive Qty</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const all: Record<number, string> = {};
+                                      detail.lines.forEach((l) => {
+                                        const remaining = l.length_weight_nos - (l.delivered_qty || 0);
+                                        if (remaining > 0) all[l.id] = String(remaining);
+                                      });
+                                      setReceiveMap(all);
+                                    }}
+                                    className="whitespace-nowrap text-[9px] font-semibold text-accent hover:underline"
+                                  >
+                                    Fill All
+                                  </button>
+                                </div>
                               </th>
                             )}
                           </tr>
@@ -1238,6 +1451,73 @@ export default function PurchaseOrdersPage() {
                     </div>
                   </section>
 
+                  {/* ── Additional Costs ── */}
+                  <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Additional Costs
+                    </p>
+                    <div className="space-y-2">
+                      {acItems.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="flex-1 text-sm text-slate-300">{c.label}</span>
+                          <span className="font-mono text-sm text-slate-300">{fmt(c.amount)}</span>
+                          <button
+                            type="button"
+                            onClick={() => { setAcItems((p) => p.filter((_, j) => j !== i)); setAcDirty(true); }}
+                            className="text-slate-600 hover:text-red-400 transition-colors text-xs leading-none px-1"
+                          >×</button>
+                        </div>
+                      ))}
+                      <div className="flex gap-2 pt-1">
+                        <input
+                          type="text"
+                          placeholder="Label (e.g. Transport)"
+                          value={acLabelDraft}
+                          onChange={(e) => setAcLabelDraft(e.target.value)}
+                          className="flex-1 rounded-lg border border-surface-border bg-transparent px-3 py-1.5 text-sm text-white placeholder-slate-600 focus:border-accent/50 focus:outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Amount"
+                          value={acAmountDraft}
+                          onChange={(e) => setAcAmountDraft(e.target.value)}
+                          className="w-28 rounded-lg border border-surface-border bg-transparent px-3 py-1.5 text-sm text-white placeholder-slate-600 focus:border-accent/50 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const label = acLabelDraft.trim();
+                            const amount = parseFloat(acAmountDraft);
+                            if (!label || isNaN(amount) || amount < 0) return;
+                            setAcItems((p) => [...p, { label, amount }]);
+                            setAcLabelDraft(""); setAcAmountDraft(""); setAcDirty(true);
+                          }}
+                          className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white transition-colors"
+                        >+ Add</button>
+                      </div>
+                      {acDirty && (
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            disabled={acSaving}
+                            onClick={async () => {
+                              setAcSaving(true);
+                              try {
+                                const updated = await api<PODetail>(`/api/v1/purchase-orders/${detail.id}/additional-costs`, {
+                                  method: "PATCH",
+                                  json: { items: acItems },
+                                });
+                                setDetail(updated);
+                                setAcDirty(false);
+                              } finally { setAcSaving(false); }
+                            }}
+                            className="rounded-lg bg-accent px-4 py-1.5 text-xs font-semibold text-white hover:bg-accent/80 disabled:opacity-60 transition-colors"
+                          >{acSaving ? "Saving…" : "Save Changes"}</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* ── Totals summary ── */}
                   <div className="rounded-xl border border-surface-border bg-[#0f1419] p-5">
                     <div className="space-y-2.5">
@@ -1245,6 +1525,12 @@ export default function PurchaseOrdersPage() {
                         <span>Subtotal</span>
                         <span className="font-mono">{fmt(detailSubtotal)}</span>
                       </div>
+                      {acItems.map((c, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm text-slate-400">
+                          <span>{c.label}</span>
+                          <span className="font-mono">{fmt(c.amount)}</span>
+                        </div>
+                      ))}
                       <div className="flex items-center justify-between text-sm text-slate-400">
                         <span>
                           GST{" "}
@@ -1265,17 +1551,89 @@ export default function PurchaseOrdersPage() {
                     </div>
                   </div>
 
+                  {/* ── Remarks ── */}
+                  {detail.remarks && (
+                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Remarks
+                      </p>
+                      <p className="whitespace-pre-wrap text-sm text-slate-300">{detail.remarks}</p>
+                    </div>
+                  )}
+
                   {/* ── Receiving Actions ── */}
                   {receivingMode && (
-                    <div className="flex justify-end pt-2">
-                       <button
-                         type="button"
-                         onClick={handleReceiveSubmit}
-                         disabled={receiving}
-                         className="flex min-w-[10rem] items-center justify-center gap-2 rounded-lg bg-green-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-60"
-                       >
-                         {receiving ? "Processing..." : "Submit Receipt"}
-                       </button>
+                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4 space-y-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Bill / Challan Numbers
+                        <span className="ml-1.5 font-normal normal-case text-slate-600">(optional)</span>
+                      </p>
+
+                      {/* Added challan chips */}
+                      {receiveBillNumbers.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {receiveBillNumbers.map((b) => (
+                            <span
+                              key={b}
+                              className="flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 pl-2.5 pr-1.5 py-1 font-mono text-xs text-blue-300"
+                            >
+                              {b}
+                              <button
+                                type="button"
+                                onClick={() => setReceiveBillNumbers((prev) => prev.filter((x) => x !== b))}
+                                className="rounded text-blue-400 hover:text-red-400 transition-colors leading-none"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Draft input + Add button */}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="e.g. CH-2024-001"
+                          value={receiveBillDraft}
+                          onChange={(e) => setReceiveBillDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              const v = receiveBillDraft.trim();
+                              if (v && !receiveBillNumbers.includes(v)) {
+                                setReceiveBillNumbers((prev) => [...prev, v]);
+                              }
+                              setReceiveBillDraft("");
+                            }
+                          }}
+                          className="flex-1 rounded-lg border border-surface-border bg-transparent px-3 py-2 text-sm text-white placeholder-slate-600 focus:border-accent/50 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const v = receiveBillDraft.trim();
+                            if (v && !receiveBillNumbers.includes(v)) {
+                              setReceiveBillNumbers((prev) => [...prev, v]);
+                            }
+                            setReceiveBillDraft("");
+                          }}
+                          className="rounded-lg border border-surface-border px-4 py-2 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white transition-colors"
+                        >
+                          + Add
+                        </button>
+                      </div>
+
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={handleReceiveSubmit}
+                          disabled={receiving}
+                          className="flex min-w-[10rem] items-center justify-center gap-2 rounded-lg bg-green-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {receiving ? "Processing..." : "Submit Receipt"}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </>

@@ -24,7 +24,10 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     }
   }, [loading, user, authError, router]);
 
-  if (loading) {
+  // Show loading screen only on the very first load (no user resolved yet).
+  // If a user already exists, keep rendering the app while any background
+  // auth check runs so switching tabs never shows a blank loading screen.
+  if (loading && user === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0b0f14] text-slate-400">
         Loading…

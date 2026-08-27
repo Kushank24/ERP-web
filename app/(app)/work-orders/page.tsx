@@ -23,6 +23,16 @@ type WOProduct = {
   product_id: number;
   product_name: string;
   quantity: number;
+  issued_qty: number;
+  remaining_qty: number;
+};
+
+type WOMaterial = {
+  name: string;
+  section_size: number;
+  unit: string;
+  quantity_per_unit: number;
+  total_required: number;
 };
 
 type WODetail = {
@@ -34,6 +44,7 @@ type WODetail = {
   creation_date: string | null;
   delivery_date: string | null;
   status: WOStatus;
+  remarks: string | null;
   products: WOProduct[];
 };
 
@@ -207,6 +218,7 @@ export default function WorkOrdersPage() {
 
   // ── UI visibility ───────────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   // ── Selectors Data ────────────────────────────────────────────────────────
   const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
@@ -221,9 +233,18 @@ export default function WorkOrdersPage() {
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
 
+  // ── Issue products to FG ────────────────────────────────────────────────────
+  const [issueQtys, setIssueQtys] = useState<Record<number, string>>({});
+  const [issuing, setIssuing] = useState(false);
+  const [issueError, setIssueError] = useState<string | null>(null);
+
   // ── PDF download state ─────────────────────────────────────────────────
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+
+  const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [materials, setMaterials] = useState<WOMaterial[] | null>(null);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
 
   // ── Form fields ─────────────────────────────────────────────────────────────
   const [fWONumber, setFWONumber] = useState("");
@@ -233,6 +254,7 @@ export default function WorkOrdersPage() {
   const [fCreationDate, setFCreationDate] = useState("");
   const [fDeliveryDate, setFDeliveryDate] = useState("");
   const [fStatus, setFStatus] = useState<WOStatus>("in-progress");
+  const [fRemarks, setFRemarks] = useState("");
   const [draftProducts, setDraftProducts] = useState<DraftProduct[]>([
     { ...BLANK_DRAFT_PRODUCT },
   ]);
@@ -254,8 +276,8 @@ export default function WorkOrdersPage() {
 
   // ── Load lists for selectors ──────────────────────────────────────────────
   const loadSelectors = useCallback(() => {
-    api<Product[]>("/api/v1/products")
-      .then(setAvailableProducts)
+    api<{ items: Product[]; total: number }>("/api/v1/products?page=1&page_size=500")
+      .then((data) => setAvailableProducts(data.items))
       .catch(() => {});
     api<Party[]>("/api/v1/work-orders/parties/list")
       .then(setParties)
@@ -273,6 +295,10 @@ export default function WorkOrdersPage() {
     setDetailError(null);
     setDetail(null);
     setCompleteError(null);
+    setIssueQtys({});
+    setIssueError(null);
+    setMaterialsOpen(false);
+    setMaterials(null);
     api<WODetail>(`/api/v1/work-orders/${id}`)
       .then((data) => {
         setDetail(data);
@@ -293,6 +319,11 @@ export default function WorkOrdersPage() {
   }
 
   function openNewForm() {
+    setIsEditing(false);
+    setFWONumber(""); setFPONumber(""); setFPODate(""); setFPartyName("");
+    setFCreationDate(""); setFDeliveryDate(""); setFStatus("in-progress"); setFRemarks("");
+    setDraftProducts([{ ...BLANK_DRAFT_PRODUCT }]);
+    setIsNewParty(false);
     setShowForm(true);
     setSelectedId(null);
     setDetail(null);
@@ -301,8 +332,30 @@ export default function WorkOrdersPage() {
     setCompleteError(null);
   }
 
+  function startEdit() {
+    if (!detail) return;
+    setIsEditing(true);
+    setFWONumber(detail.work_order_number);
+    setFPONumber(detail.po_number || "");
+    setFPODate(detail.po_date ? String(detail.po_date).slice(0, 10) : "");
+    setFPartyName(detail.party_name || "");
+    setFCreationDate(detail.creation_date ? String(detail.creation_date).slice(0, 10) : "");
+    setFDeliveryDate(detail.delivery_date ? String(detail.delivery_date).slice(0, 10) : "");
+    setFStatus(detail.status);
+    setFRemarks(detail.remarks || "");
+    setDraftProducts(
+      detail.products.length > 0
+        ? detail.products.map((p) => ({ product_id: String(p.product_id), quantity: String(p.quantity) }))
+        : [{ ...BLANK_DRAFT_PRODUCT }]
+    );
+    setIsNewParty(false);
+    setSaveError(null);
+    setShowForm(true);
+  }
+
   function closeForm() {
     setShowForm(false);
+    setIsEditing(false);
     setSaveError(null);
   }
 
@@ -314,6 +367,7 @@ export default function WorkOrdersPage() {
     setFCreationDate("");
     setFDeliveryDate("");
     setFStatus("in-progress");
+    setFRemarks("");
     setDraftProducts([{ ...BLANK_DRAFT_PRODUCT }]);
   }
 
@@ -340,7 +394,7 @@ export default function WorkOrdersPage() {
     return true;
   });
 
-  // ── Save new work order ─────────────────────────────────────────────────────
+  // ── Save work order (create or edit) ───────────────────────────────────────
   async function handleSave(e: FormEvent) {
     e.preventDefault();
     setSaveError(null);
@@ -354,31 +408,46 @@ export default function WorkOrdersPage() {
           quantity: parseInt(p.quantity, 10) || 0,
         }));
 
-      const payload = {
-        work_order_number: fWONumber.trim(),
-        po_number: fPONumber.trim() || null,
-        po_date: fPODate || null,
-        party_name: fPartyName.trim() || null,
-        creation_date: fCreationDate || null,
-        delivery_date: fDeliveryDate || null,
-        status: fStatus,
-        products: validProducts,
-      };
+      let saved: WODetail;
+      if (isEditing && selectedId !== null) {
+        const payload = {
+          work_order_number: fWONumber.trim(),
+          po_number: fPONumber.trim() || null,
+          po_date: fPODate || null,
+          party_name: fPartyName.trim() || null,
+          creation_date: fCreationDate || null,
+          delivery_date: fDeliveryDate || null,
+          remarks: fRemarks.trim() || null,
+          products: validProducts,
+        };
+        saved = await api<WODetail>(`/api/v1/work-orders/${selectedId}`, {
+          method: "PATCH",
+          json: payload,
+        });
+      } else {
+        const payload = {
+          work_order_number: fWONumber.trim(),
+          po_number: fPONumber.trim() || null,
+          po_date: fPODate || null,
+          party_name: fPartyName.trim() || null,
+          creation_date: fCreationDate || null,
+          delivery_date: fDeliveryDate || null,
+          status: fStatus,
+          remarks: fRemarks.trim() || null,
+          products: validProducts,
+        };
+        saved = await api<WODetail>("/api/v1/work-orders", {
+          method: "POST",
+          json: payload,
+        });
+      }
 
-      const created = await api<WODetail>("/api/v1/work-orders", {
-        method: "POST",
-        json: payload,
-      });
-
+      setIsEditing(false);
       resetFormFields();
       setShowForm(false);
-
-      // Show the newly created WO in the detail panel
-      setSelectedId(created.id);
-      setDetail(created);
+      setSelectedId(saved.id);
+      setDetail(saved);
       setDetailError(null);
-
-      // Refresh list
       loadList();
     } catch (err) {
       setSaveError(
@@ -420,6 +489,36 @@ export default function WorkOrdersPage() {
       );
     } finally {
       setCompleting(false);
+    }
+  }
+
+  // ── Issue products to Finished Goods ───────────────────────────────────────
+  async function handleIssueProducts() {
+    if (!detail) return;
+    const items = detail.products
+      .filter((p) => parseFloat(issueQtys[p.product_id] || "0") > 0)
+      .map((p) => ({
+        product_id: p.product_id,
+        product_name: p.product_name,
+        quantity: parseFloat(issueQtys[p.product_id]),
+      }));
+    if (items.length === 0) {
+      setIssueError("Enter a quantity to issue for at least one product.");
+      return;
+    }
+    setIssuing(true);
+    setIssueError(null);
+    try {
+      const updated = await api<WODetail>(`/api/v1/work-orders/${detail.id}/issue-products`, {
+        method: "POST",
+        json: { items },
+      });
+      setDetail(updated);
+      setIssueQtys({});
+    } catch (err) {
+      setIssueError(err instanceof Error ? err.message : "Failed to issue products.");
+    } finally {
+      setIssuing(false);
     }
   }
 
@@ -619,7 +718,7 @@ export default function WorkOrdersPage() {
           <>
             <div className="flex shrink-0 items-center justify-between border-b border-surface-border px-5 py-3">
               <h2 className="text-sm font-semibold text-white">
-                New Work Order
+                {isEditing ? "Edit Work Order" : "New Work Order"}
               </h2>
               <button
                 type="button"
@@ -643,6 +742,8 @@ export default function WorkOrdersPage() {
                         value={fWONumber}
                         onChange={(e) => setFWONumber(e.target.value)}
                         required
+                        disabled={isEditing}
+                        className={isEditing ? "opacity-60 cursor-not-allowed" : ""}
                       />
                     </FormField>
 
@@ -812,6 +913,18 @@ export default function WorkOrdersPage() {
                   )}
                 </div>
 
+                {/* ── Remarks ── */}
+                <div>
+                  <SectionHeading>Remarks</SectionHeading>
+                  <textarea
+                    value={fRemarks}
+                    onChange={(e) => setFRemarks(e.target.value)}
+                    placeholder="Optional notes or remarks…"
+                    rows={3}
+                    className="mt-3 w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white placeholder-slate-600 outline-none transition focus:border-accent/70 focus:ring-1 focus:ring-accent/20 resize-none"
+                  />
+                </div>
+
                 {/* ── Save error ── */}
                 {saveError && <ErrorAlert message={saveError} />}
               </form>
@@ -838,6 +951,8 @@ export default function WorkOrdersPage() {
                       <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                       Saving…
                     </>
+                  ) : isEditing ? (
+                    "Update Work Order"
                   ) : (
                     "Save Work Order"
                   )}
@@ -865,6 +980,13 @@ export default function WorkOrdersPage() {
                   title="Close panel"
                 >
                   ✕
+                </button>
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-slate-400 hover:text-white"
+                >
+                  Edit
                 </button>
                 {detail?.status === "in-progress" && (
                   <button
@@ -966,6 +1088,16 @@ export default function WorkOrdersPage() {
                     </div>
                   </div>
 
+                  {/* ── Remarks ── */}
+                  {detail.remarks && (
+                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Remarks
+                      </p>
+                      <p className="whitespace-pre-wrap text-sm text-slate-300">{detail.remarks}</p>
+                    </div>
+                  )}
+
                   {/* ── Products table ── */}
                   <div>
                     <SectionHeading>
@@ -980,33 +1112,162 @@ export default function WorkOrdersPage() {
                         <table className="w-full text-left text-sm">
                           <thead className="border-b border-surface-border bg-[#0f1419]/70">
                             <tr>
-                              <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                Product Name
-                              </th>
-                              <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                                Quantity
-                              </th>
+                              {["Product Name", "Required", "Issued", "Remaining"].map((h) => (
+                                <th key={h} className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                  {h}
+                                </th>
+                              ))}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-surface-border/40">
-                            {detail.products.map((p, i) => (
-                              <tr
-                                key={p.product_id ?? i}
-                                className="transition-colors hover:bg-white/[0.02]"
-                              >
-                                <td className="px-4 py-3 text-sm text-white">
-                                  {p.product_name}
-                                </td>
-                                <td className="px-4 py-3 text-right font-mono text-sm text-slate-300">
-                                  {p.quantity}
-                                </td>
-                              </tr>
-                            ))}
+                            {detail.products.map((p, i) => {
+                              const allIssued = p.remaining_qty <= 0;
+                              const partialIssued = p.issued_qty > 0 && !allIssued;
+                              return (
+                                <tr key={p.product_id ?? i} className="transition-colors hover:bg-white/[0.02]">
+                                  <td className="px-4 py-3 text-sm text-white">{p.product_name}</td>
+                                  <td className="px-4 py-3 font-mono text-sm text-slate-300">{p.quantity}</td>
+                                  <td className="px-4 py-3 font-mono text-sm">
+                                    <span className={p.issued_qty > 0 ? "text-emerald-400" : "text-slate-600"}>
+                                      {p.issued_qty}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 font-mono text-sm">
+                                    <span className={allIssued ? "text-emerald-400" : partialIssued ? "text-amber-400" : "text-slate-400"}>
+                                      {allIssued ? "✓ Done" : p.remaining_qty}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
                     )}
                   </div>
+
+                  {/* ── Material Requirements (lazy-loaded toggle) ── */}
+                  <div>
+                    <button
+                      className="flex w-full items-center justify-between rounded-lg border border-surface-border bg-[#0f1419]/60 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
+                      onClick={() => {
+                        const next = !materialsOpen;
+                        setMaterialsOpen(next);
+                        if (next && materials === null && !materialsLoading) {
+                          setMaterialsLoading(true);
+                          api<WOMaterial[]>(`/api/v1/work-orders/${detail.id}/materials`)
+                            .then((data) => { setMaterials(data); setMaterialsLoading(false); })
+                            .catch(() => { setMaterials([]); setMaterialsLoading(false); });
+                        }
+                      }}
+                    >
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        Material Requirements
+                      </span>
+                      <span className="text-xs text-slate-500">{materialsOpen ? "▲ Hide" : "▼ Show"}</span>
+                    </button>
+
+                    {materialsOpen && (
+                      <div className="mt-2 overflow-hidden rounded-lg border border-surface-border">
+                        {materialsLoading ? (
+                          <p className="px-4 py-6 text-center text-xs text-slate-500">Loading materials…</p>
+                        ) : !materials || materials.length === 0 ? (
+                          <p className="px-4 py-6 text-center text-xs text-slate-500">No material requirements found.</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                              <thead className="border-b border-surface-border bg-[#0f1419]/70">
+                                <tr>
+                                  {["Material", "Section Size", "Unit", "Qty / Unit", "Total Required"].map((h) => (
+                                    <th key={h} className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                                      {h}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-surface-border/40">
+                                {materials.map((m, i) => (
+                                  <tr key={i} className="transition-colors hover:bg-white/[0.02]">
+                                    <td className="px-4 py-3 text-sm text-white">{m.name}</td>
+                                    <td className="px-4 py-3 font-mono text-sm text-slate-300">
+                                      {m.section_size > 0 ? m.section_size : "-"}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-slate-300">{m.unit}</td>
+                                    <td className="px-4 py-3 font-mono text-sm text-slate-300">{m.quantity_per_unit}</td>
+                                    <td className="px-4 py-3 font-mono text-sm text-slate-300">{m.total_required}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Issue to Finished Goods panel (in-progress only) ── */}
+                  {detail.status === "in-progress" && detail.products.some((p) => p.remaining_qty > 0) && (
+                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Issue to Finished Goods
+                      </p>
+                      {issueError && (
+                        <div className="mb-3">
+                          <ErrorAlert message={issueError} />
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        {detail.products
+                          .filter((p) => p.remaining_qty > 0)
+                          .map((p) => (
+                            <div key={p.product_id} className="grid grid-cols-[1fr_auto_10rem] items-center gap-3">
+                              <span className="truncate text-xs text-slate-300">
+                                {p.product_name}
+                                <span className="ml-1.5 text-slate-600">(remaining: {p.remaining_qty})</span>
+                              </span>
+                              <span className="text-[10px] text-slate-600">Qty to issue</span>
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                max={p.remaining_qty}
+                                placeholder={`0 – ${p.remaining_qty}`}
+                                value={issueQtys[p.product_id] ?? ""}
+                                onChange={(e) =>
+                                  setIssueQtys((prev) => ({ ...prev, [p.product_id]: e.target.value }))
+                                }
+                                className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-1.5 text-xs text-white placeholder-slate-600 outline-none transition focus:border-accent/70 focus:ring-1 focus:ring-accent/20"
+                              />
+                            </div>
+                          ))}
+                      </div>
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleIssueProducts}
+                          disabled={issuing}
+                          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {issuing ? (
+                            <>
+                              <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white" />
+                              Issuing…
+                            </>
+                          ) : (
+                            "Issue to Finished Goods"
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* All products issued banner */}
+                  {detail.status === "in-progress" && detail.products.length > 0 && detail.products.every((p) => p.remaining_qty <= 0) && (
+                    <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400">
+                      <span>✓</span>
+                      <span>All products have been issued to Finished Goods.</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

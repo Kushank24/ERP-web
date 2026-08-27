@@ -118,6 +118,14 @@ function EmptyState({ onAdd }: { onAdd(): void }) {
 
 // ─── BOQ Table ────────────────────────────────────────────────────────────────
 
+function MaterialDatalist({ id, names }: { id: string; names: string[] }) {
+  return (
+    <datalist id={id}>
+      {names.map((n) => <option key={n} value={n} />)}
+    </datalist>
+  );
+}
+
 function BoqTable({
   lines,
   productId,
@@ -249,7 +257,7 @@ function BoqTable({
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
 
-function ProductCard({ product, onRefresh }: { product: ProductSummary; onRefresh: () => void }) {
+function ProductCard({ product, onRefresh, materialNames }: { product: ProductSummary; onRefresh: () => void; materialNames: string[] }) {
   const [open, setOpen] = useState(false);
   const [boq, setBoq] = useState<BoqLine[] | null>(null);
   const [boqLoading, setBoqLoading] = useState(false);
@@ -471,10 +479,11 @@ function ProductCard({ product, onRefresh }: { product: ProductSummary; onRefres
           {showAdd && (
             <form onSubmit={handleAddBoq} className="rounded-lg border border-accent/20 bg-accent/5 p-4">
               <p className="mb-3 text-xs font-semibold text-accent">New BOQ Line</p>
+              <MaterialDatalist id={`boq-mat-${product.id}`} names={materialNames} />
               <div className="grid grid-cols-[1fr_78px_72px_72px] gap-2">
                 <div>
                   <label className="mb-1 block text-[10px] font-medium text-slate-400">Material Name *</label>
-                  <input type="text" required placeholder="e.g. Steel Rod 16mm" value={boqName} onChange={(e) => setBoqName(e.target.value)}
+                  <input type="text" required list={`boq-mat-${product.id}`} placeholder="Select or type…" value={boqName} onChange={(e) => setBoqName(e.target.value)}
                     className="w-full rounded border border-surface-border bg-[#0f1419] px-2 py-1.5 text-xs text-white placeholder-slate-600 focus:border-accent focus:outline-none" />
                 </div>
                 <div>
@@ -512,7 +521,7 @@ function ProductCard({ product, onRefresh }: { product: ProductSummary; onRefres
 
 // ─── Create Product Panel ─────────────────────────────────────────────────────
 
-function CreatePanel({ onClose, onCreated }: { onClose(): void; onCreated(): void }) {
+function CreatePanel({ onClose, onCreated, materialNames }: { onClose(): void; onCreated(): void; materialNames: string[] }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -609,6 +618,7 @@ function CreatePanel({ onClose, onCreated }: { onClose(): void; onCreated(): voi
               </div>
             </div>
             <div className="border-t border-surface-border px-6 py-5">
+              <MaterialDatalist id="boq-mat-create" names={materialNames} />
               <div className="mb-4 flex items-start justify-between">
                 <div>
                   <p className="text-sm font-semibold text-white">Bill of Quantities</p>
@@ -627,7 +637,7 @@ function CreatePanel({ onClose, onCreated }: { onClose(): void; onCreated(): voi
                   const total = (parseFloat(line.section_size) || 0) * (parseFloat(line.quantity) || 0);
                   return (
                     <div key={line.key} className="grid grid-cols-[1fr_78px_72px_72px_72px_28px] items-center gap-2">
-                      <input type="text" placeholder="Material name…" value={line.name} onChange={(e) => updateLine(line.key, "name", e.target.value)}
+                      <input type="text" list="boq-mat-create" placeholder="Select or type…" value={line.name} onChange={(e) => updateLine(line.key, "name", e.target.value)}
                         className="min-w-0 rounded border border-surface-border bg-[#0f1419] px-2 py-1.5 text-xs text-white placeholder-slate-600 focus:border-accent focus:outline-none" />
                       <input type="number" step="any" min="0" placeholder="0" value={line.section_size} onChange={(e) => updateLine(line.key, "section_size", e.target.value)}
                         className="rounded border border-surface-border bg-[#0f1419] px-2 py-1.5 text-xs text-white placeholder-slate-600 focus:border-accent focus:outline-none" />
@@ -759,6 +769,13 @@ export default function ProductsPage() {
       .catch(() => {});
   }, []);
 
+  const [materialNames, setMaterialNames] = useState<string[]>([]);
+  useEffect(() => {
+    api<{ id: number; name: string }[]>("/api/v1/materials")
+      .then((mats) => setMaterialNames(mats.map((m) => m.name)))
+      .catch(() => {});
+  }, []);
+
   // Client-side filter on the current page when a search is active (already filtered server-side)
   const grouped = products.reduce<Map<string, ProductSummary[]>>((acc, p) => {
     const cat = p.category?.trim() || UNCATEGORIZED;
@@ -811,7 +828,7 @@ export default function ProductsPage() {
 
   return (
     <>
-      {showCreate && <CreatePanel onClose={() => setShowCreate(false)} onCreated={load} />}
+      {showCreate && <CreatePanel onClose={() => setShowCreate(false)} onCreated={load} materialNames={materialNames} />}
       <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleUpload} />
 
       <div className="space-y-6">
@@ -904,7 +921,7 @@ export default function ProductsPage() {
                   )}
                   <div className="space-y-3">
                     {groupProducts.map((p) => (
-                      <ProductCard key={p.id} product={p} onRefresh={load} />
+                      <ProductCard key={p.id} product={p} onRefresh={load} materialNames={materialNames} />
                     ))}
                   </div>
                 </div>

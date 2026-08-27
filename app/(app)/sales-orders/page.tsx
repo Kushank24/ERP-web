@@ -15,6 +15,7 @@ type SORow = {
   status: number;
   sales_date: string | null;
   payment_received?: boolean;
+  payment_amount: number | null;
 };
 
 type SOLine = {
@@ -27,6 +28,8 @@ type SOLine = {
   total_price: number;
   notes: string | null;
 };
+
+type AdditionalCost = { label: string; amount: number };
 
 type SODetail = {
   id: number;
@@ -41,7 +44,9 @@ type SODetail = {
   notes: string | null;
   status: number;
   payment_received: boolean;
+  payment_amount: number | null;
   total_amount: number;
+  additional_costs: AdditionalCost[];
   lines: SOLine[];
 };
 
@@ -60,6 +65,7 @@ type Company = {
 };
 
 type DraftLine = {
+  lineId: number | null;
   finished_good_id: string;
   product_name: string;
   product_code: string;
@@ -74,28 +80,21 @@ type DraftLine = {
 
 const STATUS_MAP: Record<number, { label: string; classes: string }> = {
   1: {
-    label: "Draft",
-    classes: "bg-slate-500/15 text-slate-400 border-slate-500/30",
+    label: "Not Received",
+    classes: "bg-red-500/15 text-red-400 border-red-500/30",
   },
   2: {
-    label: "Confirmed",
-    classes: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+    label: "Partially Received",
+    classes: "bg-amber-500/15 text-amber-400 border-amber-500/30",
   },
   3: {
-    label: "Partial Dispatch",
-    classes: "bg-orange-500/15 text-orange-400 border-orange-500/30",
-  },
-  4: {
-    label: "Full Dispatch",
+    label: "Received",
     classes: "bg-green-500/15 text-green-400 border-green-500/30",
-  },
-  5: {
-    label: "Cancelled",
-    classes: "bg-red-500/15 text-red-400 border-red-500/30",
   },
 };
 
 const BLANK_LINE: DraftLine = {
+  lineId: null,
   finished_good_id: "",
   product_name: "",
   product_code: "",
@@ -110,7 +109,7 @@ const BLANK_LINE: DraftLine = {
 
 function StatusBadge({ status }: { status: number }) {
   const s = STATUS_MAP[status] ?? {
-    label: `Status ${status}`,
+    label: "N/A",
     classes: "bg-slate-500/15 text-slate-400 border-slate-500/30",
   };
   return (
@@ -248,15 +247,19 @@ export default function SalesOrdersPage() {
 
   // ── UI visibility ──────────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
-
-  // ── Dispatch state ─────────────────────────────────────────────────────────
-  const [dispatchQtys, setDispatchQtys] = useState<Record<number, string>>({});
-  const [dispatching, setDispatching] = useState(false);
-  const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   // ── Payment state ──────────────────────────────────────────────────────────
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [partialAmountInput, setPartialAmountInput] = useState("");
+
+  // ── Additional costs ──────────────────────────────────────────────────────
+  const [acItems, setAcItems] = useState<AdditionalCost[]>([]);
+  const [acLabelDraft, setAcLabelDraft] = useState("");
+  const [acAmountDraft, setAcAmountDraft] = useState("");
+  const [acDirty, setAcDirty] = useState(false);
+  const [acSaving, setAcSaving] = useState(false);
 
   // ── Save state ─────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
@@ -317,6 +320,9 @@ export default function SalesOrdersPage() {
     api<SODetail>(`/api/v1/sales-orders/${id}`)
       .then((data) => {
         setDetail(data);
+        setPartialAmountInput(data.status === 2 && data.payment_amount != null ? String(data.payment_amount) : "");
+        setAcItems(data.additional_costs ?? []);
+        setAcDirty(false);
         setDetailLoading(false);
       })
       .catch((e: Error) => {
@@ -334,6 +340,12 @@ export default function SalesOrdersPage() {
   }
 
   function openNewForm() {
+    setIsEditing(false);
+    setFInvoiceNumber(""); setFCompanyName(""); setFCompanyLocation("");
+    setFCompanyContact(""); setFCompanyGSTIN(""); setFSalesDate("");
+    setFDeliveryDate(""); setFGSTRate("18"); setFNotes("");
+    setDraftLines([{ ...BLANK_LINE }]);
+    setIsNewCompany(false);
     setShowForm(true);
     setSelectedId(null);
     setDetail(null);
@@ -341,8 +353,35 @@ export default function SalesOrdersPage() {
     setSaveError(null);
   }
 
+  function startEdit() {
+    if (!detail) return;
+    setIsEditing(true);
+    setFInvoiceNumber(detail.invoice_number);
+    setFCompanyName(detail.company_name || "");
+    setFCompanyLocation(detail.company_location || "");
+    setFCompanyContact(detail.company_contact || "");
+    setFCompanyGSTIN(detail.company_gstin || "");
+    setFSalesDate(detail.sales_date ? String(detail.sales_date).slice(0, 10) : "");
+    setFDeliveryDate(detail.delivery_date ? String(detail.delivery_date).slice(0, 10) : "");
+    setFGSTRate(String(detail.gst_rate ?? 18));
+    setFNotes(detail.notes || "");
+    setDraftLines(detail.lines.map((l) => ({
+      lineId: l.id,
+      finished_good_id: "",
+      product_name: l.product_name,
+      product_code: l.product_code || "",
+      quantity_sold: String(l.quantity_sold),
+      unit_price: String(l.unit_price),
+      notes: l.notes || "",
+    })));
+    setIsNewCompany(false);
+    setSaveError(null);
+    setShowForm(true);
+  }
+
   function closeForm() {
     setShowForm(false);
+    setIsEditing(false);
     setSaveError(null);
   }
 
@@ -385,8 +424,9 @@ export default function SalesOrdersPage() {
   const detailSubtotal = detail
     ? detail.lines.reduce((acc, l) => acc + l.quantity_sold * l.unit_price, 0)
     : 0;
-  const detailGSTAmount = detail ? (detailSubtotal * detail.gst_rate) / 100 : 0;
-  const detailGrandTotal = detailSubtotal + detailGSTAmount;
+  const detailExtraCosts = acItems.reduce((s, c) => s + (c.amount || 0), 0);
+  const detailGSTAmount = detail ? ((detailSubtotal + detailExtraCosts) * detail.gst_rate) / 100 : 0;
+  const detailGrandTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
 
   const filteredRows = rows.filter((r) => {
     if (colFilters.invoice && !r.invoice_number.toLowerCase().includes(colFilters.invoice.toLowerCase())) return false;
@@ -395,22 +435,24 @@ export default function SalesOrdersPage() {
     return true;
   });
 
-  // ── Toggle payment received ────────────────────────────────────────────────
-  async function handlePaymentToggle() {
+  // ── Update payment status (1=Not Received, 2=Partially Received, 3=Received) ──
+  async function handlePaymentUpdate(paymentStatus: number, amountOverride?: number | null) {
     if (!detail) return;
     setPaymentLoading(true);
     setPaymentError(null);
     try {
+      const amt = paymentStatus === 2
+        ? (amountOverride !== undefined ? amountOverride : (parseFloat(partialAmountInput) || null))
+        : null;
       const updated = await api<SODetail>(`/api/v1/sales-orders/${detail.id}/payment`, {
         method: "PATCH",
-        json: { payment_received: !detail.payment_received },
+        json: { payment_status: paymentStatus, payment_amount: amt },
       });
       setDetail(updated);
+      setPartialAmountInput(updated.status === 2 && updated.payment_amount != null ? String(updated.payment_amount) : "");
       setRows((prev) =>
         prev.map((r) =>
-          r.id === updated.id
-            ? { ...r, payment_received: updated.payment_received, status: updated.status }
-            : r,
+          r.id === updated.id ? { ...r, status: updated.status, payment_amount: updated.payment_amount } : r,
         ),
       );
     } catch (err) {
@@ -422,90 +464,72 @@ export default function SalesOrdersPage() {
     }
   }
 
-  // ── Record dispatch ────────────────────────────────────────────────────────
-  async function handleDispatch() {
-    if (!detail) return;
-    setDispatching(true);
-    setDispatchError(null);
-    try {
-      const items = detail.lines
-        .filter((l) => parseFloat(dispatchQtys[l.id] || "0") > 0)
-        .map((l) => ({ line_id: l.id, dispatch_qty: parseFloat(dispatchQtys[l.id]) }));
-      if (items.length === 0) {
-        setDispatchError("Enter a quantity to dispatch for at least one item.");
-        setDispatching(false);
-        return;
-      }
-      const updated = await api<SODetail>(`/api/v1/sales-orders/${detail.id}/dispatch`, {
-        method: "POST",
-        json: { items },
-      });
-      setDetail(updated);
-      setDispatchQtys({});
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === updated.id ? { ...r, status: updated.status } : r,
-        ),
-      );
-    } catch (err) {
-      setDispatchError(
-        err instanceof Error ? err.message : "Failed to record dispatch.",
-      );
-    } finally {
-      setDispatching(false);
-    }
-  }
-
-  // ── Save new sales order ───────────────────────────────────────────────────
+  // ── Save sales order (create or edit) ─────────────────────────────────────
   async function handleSave(e: FormEvent) {
     e.preventDefault();
     setSaveError(null);
     setSaving(true);
     try {
-      const payload = {
-        invoice_number: fInvoiceNumber.trim(),
-        company_name: fCompanyName.trim(),
-        company_location: fCompanyLocation.trim() || "",
-        company_contact: fCompanyContact.trim() || "",
-        company_gstin: fCompanyGSTIN.trim() || null,
-        sales_date: fSalesDate || new Date().toISOString().split("T")[0],
-        delivery_date: fDeliveryDate || null,
-        gst_rate: parseFloat(fGSTRate) || 18,
-        notes: fNotes.trim() || null,
-        lines: draftLines.map((l) => ({
-          finished_good_id: l.finished_good_id ? parseInt(l.finished_good_id, 10) : undefined,
-          product_name: l.product_name.trim(),
-          product_code: l.product_code.trim() || null,
-          quantity_sold: parseFloat(l.quantity_sold) || 0,
-          unit_price: parseFloat(l.unit_price) || 0,
-          notes: l.notes.trim() || null,
-        })),
-      };
+      let saved: SODetail;
+      if (isEditing && selectedId !== null) {
+        const payload = {
+          company_name: fCompanyName.trim(),
+          company_location: fCompanyLocation.trim() || "",
+          company_contact: fCompanyContact.trim() || "",
+          company_gstin: fCompanyGSTIN.trim() || null,
+          sales_date: fSalesDate || new Date().toISOString().split("T")[0],
+          delivery_date: fDeliveryDate || null,
+          gst_rate: parseFloat(fGSTRate) || 18,
+          notes: fNotes.trim() || null,
+          lines: draftLines.map((l) => ({
+            id: l.lineId,
+            finished_good_id: l.finished_good_id ? parseInt(l.finished_good_id, 10) : undefined,
+            product_name: l.product_name.trim(),
+            product_code: l.product_code.trim() || null,
+            quantity_sold: parseFloat(l.quantity_sold) || 0,
+            unit_price: parseFloat(l.unit_price) || 0,
+            notes: l.notes.trim() || null,
+          })),
+        };
+        saved = await api<SODetail>(`/api/v1/sales-orders/${selectedId}`, {
+          method: "PATCH",
+          json: payload,
+        });
+      } else {
+        const payload = {
+          invoice_number: fInvoiceNumber.trim(),
+          company_name: fCompanyName.trim(),
+          company_location: fCompanyLocation.trim() || "",
+          company_contact: fCompanyContact.trim() || "",
+          company_gstin: fCompanyGSTIN.trim() || null,
+          sales_date: fSalesDate || new Date().toISOString().split("T")[0],
+          delivery_date: fDeliveryDate || null,
+          gst_rate: parseFloat(fGSTRate) || 18,
+          notes: fNotes.trim() || null,
+          lines: draftLines.map((l) => ({
+            finished_good_id: l.finished_good_id ? parseInt(l.finished_good_id, 10) : undefined,
+            product_name: l.product_name.trim(),
+            product_code: l.product_code.trim() || null,
+            quantity_sold: parseFloat(l.quantity_sold) || 0,
+            unit_price: parseFloat(l.unit_price) || 0,
+            notes: l.notes.trim() || null,
+          })),
+        };
+        saved = await api<SODetail>("/api/v1/sales-orders", {
+          method: "POST",
+          json: payload,
+        });
+      }
 
-      const created = await api<SODetail>("/api/v1/sales-orders", {
-        method: "POST",
-        json: payload,
-      });
-
-      // Reset form fields
-      setFInvoiceNumber("");
-      setFCompanyName("");
-      setFCompanyLocation("");
-      setFCompanyContact("");
-      setFCompanyGSTIN("");
-      setFSalesDate("");
-      setFDeliveryDate("");
-      setFGSTRate("18");
-      setFNotes("");
+      setIsEditing(false);
+      setFInvoiceNumber(""); setFCompanyName(""); setFCompanyLocation("");
+      setFCompanyContact(""); setFCompanyGSTIN(""); setFSalesDate("");
+      setFDeliveryDate(""); setFGSTRate("18"); setFNotes("");
       setDraftLines([{ ...BLANK_LINE }]);
       setShowForm(false);
-
-      // Show the newly created SO in the detail panel
-      setSelectedId(created.id);
-      setDetail(created);
+      setSelectedId(saved.id);
+      setDetail(saved);
       setDetailError(null);
-
-      // Refresh the list so the new SO appears
       loadList();
     } catch (err) {
       setSaveError(
@@ -660,7 +684,12 @@ export default function SalesOrdersPage() {
                         <span className="text-right font-mono text-xs text-slate-300">
                           {fmt(row.total_amount)}
                         </span>
-                        <StatusBadge status={row.status} />
+                        <div className="flex flex-col items-start gap-0.5">
+                          <StatusBadge status={row.status} />
+                          {row.status === 2 && row.payment_amount != null && (
+                            <span className="text-[9px] text-amber-400/80 font-mono">{fmt(row.payment_amount)} recd.</span>
+                          )}
+                        </div>
                       </div>
                       <div className="mt-1 text-[10px] text-slate-600">
                         Date:{" "}
@@ -686,11 +715,11 @@ export default function SalesOrdersPage() {
         <div className="flex shrink-0 items-center justify-between border-b border-surface-border px-5 py-3">
           <div>
             <h2 className="text-sm font-semibold text-white">
-              {showForm ? "New Sales Order" : "Sales Order Detail"}
+              {showForm ? (isEditing ? "Edit Sales Order" : "New Sales Order") : "Sales Order Detail"}
             </h2>
             {showForm && (
               <p className="text-[11px] text-slate-500">
-                Fill in the details below and add product lines.
+                {isEditing ? "Update the fields below and save." : "Fill in the details below and add product lines."}
               </p>
             )}
             {!showForm && detail && (
@@ -734,6 +763,8 @@ export default function SalesOrdersPage() {
                       onChange={(e) => setFInvoiceNumber(e.target.value)}
                       placeholder="INV-2025-001"
                       required
+                      disabled={isEditing}
+                      className={isEditing ? "opacity-60 cursor-not-allowed" : ""}
                     />
                   </FormField>
                   <FormField label="Sales Date">
@@ -1036,6 +1067,8 @@ export default function SalesOrdersPage() {
                       <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white" />
                       Saving…
                     </>
+                  ) : isEditing ? (
+                    "Update Sales Order"
                   ) : (
                     "Save Sales Order"
                   )}
@@ -1083,22 +1116,85 @@ export default function SalesOrdersPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <StatusBadge status={detail.status} />
                       <button
                         type="button"
-                        onClick={handlePaymentToggle}
-                        disabled={paymentLoading}
-                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                          detail.payment_received
-                            ? "border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500/20"
-                            : "border-surface-border text-slate-400 hover:border-slate-500 hover:text-white"
-                        }`}
+                        onClick={startEdit}
+                        className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-slate-400 hover:text-white"
                       >
-                        {detail.payment_received ? "✓ Payment Received" : "Payment Pending"}
+                        Edit
                       </button>
                     </div>
                   </div>
                   {paymentError && <ErrorAlert message={paymentError} />}
+
+                  {/* ── Payment status selector ── */}
+                  <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Payment Status
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {[
+                        { value: 1, label: "Not Received", activeClass: "border-red-500/50 bg-red-500/15 text-red-400" },
+                        { value: 2, label: "Partially Received", activeClass: "border-amber-500/50 bg-amber-500/15 text-amber-400" },
+                        { value: 3, label: "Received", activeClass: "border-green-500/50 bg-green-500/15 text-green-400" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          disabled={paymentLoading}
+                          onClick={() => handlePaymentUpdate(opt.value)}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                            detail.status === opt.value
+                              ? opt.activeClass
+                              : "border-surface-border text-slate-500 hover:border-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          {detail.status === opt.value && "✓ "}{opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {detail.status === 2 && (() => {
+                      const parsed = parseFloat(partialAmountInput);
+                      const exceedsTotal = !isNaN(parsed) && parsed > detail.total_amount;
+                      return (
+                        <div className="mt-3 border-t border-surface-border/50 pt-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400 shrink-0">Amount received (₹)</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={detail.total_amount}
+                              value={partialAmountInput}
+                              onChange={(e) => setPartialAmountInput(e.target.value)}
+                              placeholder="e.g. 25000"
+                              className={`w-36 rounded-lg border bg-[#0b0f14] px-3 py-1.5 text-xs text-white placeholder-slate-600 outline-none transition focus:ring-1 ${
+                                exceedsTotal
+                                  ? "border-red-500/60 focus:border-red-500/60 focus:ring-red-500/20"
+                                  : "border-surface-border focus:border-amber-500/50 focus:ring-amber-500/20"
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              disabled={paymentLoading || exceedsTotal}
+                              onClick={() => handlePaymentUpdate(2)}
+                              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Save Amount
+                            </button>
+                            {detail.payment_amount != null && (
+                              <span className="text-xs text-slate-500">Current: <span className="font-mono text-amber-400">{fmt(detail.payment_amount)}</span></span>
+                            )}
+                          </div>
+                          {exceedsTotal && (
+                            <p className="mt-1.5 text-[11px] text-red-400">
+                              Amount cannot exceed the order total of {fmt(detail.total_amount)}.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
 
                   {/* ── Customer information card ── */}
                   <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
@@ -1167,7 +1263,6 @@ export default function SalesOrdersPage() {
                               "Product",
                               "Code",
                               "Qty",
-                              "Dispatched",
                               "Unit Price",
                               "Total",
                               "Notes",
@@ -1185,7 +1280,7 @@ export default function SalesOrdersPage() {
                           {detail.lines.length === 0 ? (
                             <tr>
                               <td
-                                colSpan={7}
+                                colSpan={6}
                                 className="px-3 py-4 text-center text-xs text-slate-600"
                               >
                                 No line items found.
@@ -1208,19 +1303,6 @@ export default function SalesOrdersPage() {
                                 <td className="px-3 py-2.5 text-xs text-slate-300">
                                   {line.quantity_sold}
                                 </td>
-                                <td className="px-3 py-2.5 text-xs">
-                                  <span
-                                    className={
-                                      line.dispatched_qty >= line.quantity_sold
-                                        ? "text-green-400"
-                                        : line.dispatched_qty > 0
-                                          ? "text-orange-400"
-                                          : "text-slate-600"
-                                    }
-                                  >
-                                    {line.dispatched_qty ?? 0} / {line.quantity_sold}
-                                  </span>
-                                </td>
                                 <td className="px-3 py-2.5 font-mono text-xs text-slate-300">
                                   {fmt(line.unit_price)}
                                 </td>
@@ -1241,75 +1323,72 @@ export default function SalesOrdersPage() {
                     </div>
                   </div>
 
-                  {/* ── Dispatch panel (hidden once fully dispatched) ── */}
-                  {detail.status < 4 && (
-                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
-                      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                        Record Dispatch
-                      </p>
-                      {dispatchError && (
-                        <div className="mb-3">
-                          <ErrorAlert message={dispatchError} />
+                  {/* ── Additional Costs ── */}
+                  <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Additional Costs
+                    </p>
+                    <div className="space-y-2">
+                      {acItems.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="flex-1 text-sm text-slate-300">{c.label}</span>
+                          <span className="font-mono text-sm text-slate-300">{fmt(c.amount)}</span>
+                          <button
+                            type="button"
+                            onClick={() => { setAcItems((p) => p.filter((_, j) => j !== i)); setAcDirty(true); }}
+                            className="text-slate-600 hover:text-red-400 transition-colors text-xs leading-none px-1"
+                          >×</button>
                         </div>
-                      )}
-                      <div className="space-y-2">
-                        {detail.lines
-                          .filter((l) => (l.dispatched_qty ?? 0) < l.quantity_sold)
-                          .map((line) => {
-                            const remaining = line.quantity_sold - (line.dispatched_qty ?? 0);
-                            return (
-                              <div
-                                key={line.id}
-                                className="grid grid-cols-[1fr_auto_10rem] items-center gap-3"
-                              >
-                                <span className="truncate text-xs text-slate-300">
-                                  {line.product_name}
-                                  <span className="ml-1.5 text-slate-600">
-                                    (remaining: {remaining})
-                                  </span>
-                                </span>
-                                <span className="text-[10px] text-slate-600">Qty to dispatch</span>
-                                <input
-                                  type="number"
-                                  step="any"
-                                  min="0"
-                                  max={remaining}
-                                  placeholder={`0 – ${remaining}`}
-                                  value={dispatchQtys[line.id] ?? ""}
-                                  onChange={(e) =>
-                                    setDispatchQtys((prev) => ({
-                                      ...prev,
-                                      [line.id]: e.target.value,
-                                    }))
-                                  }
-                                  className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-1.5 text-xs text-white placeholder-slate-600 outline-none transition focus:border-accent/70 focus:ring-1 focus:ring-accent/20"
-                                />
-                              </div>
-                            );
-                          })}
-                        {detail.lines.every((l) => (l.dispatched_qty ?? 0) >= l.quantity_sold) && (
-                          <p className="text-xs text-slate-600">All items fully dispatched.</p>
-                        )}
-                      </div>
-                      <div className="mt-4 flex justify-end">
+                      ))}
+                      <div className="flex gap-2 pt-1">
+                        <input
+                          type="text"
+                          placeholder="Label (e.g. Transport)"
+                          value={acLabelDraft}
+                          onChange={(e) => setAcLabelDraft(e.target.value)}
+                          className="flex-1 rounded-lg border border-surface-border bg-transparent px-3 py-1.5 text-sm text-white placeholder-slate-600 focus:border-accent/50 focus:outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Amount"
+                          value={acAmountDraft}
+                          onChange={(e) => setAcAmountDraft(e.target.value)}
+                          className="w-28 rounded-lg border border-surface-border bg-transparent px-3 py-1.5 text-sm text-white placeholder-slate-600 focus:border-accent/50 focus:outline-none"
+                        />
                         <button
                           type="button"
-                          onClick={handleDispatch}
-                          disabled={dispatching}
-                          className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {dispatching ? (
-                            <>
-                              <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white" />
-                              Saving…
-                            </>
-                          ) : (
-                            "Record Dispatch"
-                          )}
-                        </button>
+                          onClick={() => {
+                            const label = acLabelDraft.trim();
+                            const amount = parseFloat(acAmountDraft);
+                            if (!label || isNaN(amount) || amount < 0) return;
+                            setAcItems((p) => [...p, { label, amount }]);
+                            setAcLabelDraft(""); setAcAmountDraft(""); setAcDirty(true);
+                          }}
+                          className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white transition-colors"
+                        >+ Add</button>
                       </div>
+                      {acDirty && (
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            disabled={acSaving}
+                            onClick={async () => {
+                              setAcSaving(true);
+                              try {
+                                const updated = await api<SODetail>(`/api/v1/sales-orders/${detail.id}/additional-costs`, {
+                                  method: "PATCH",
+                                  json: { items: acItems },
+                                });
+                                setDetail(updated);
+                                setAcDirty(false);
+                              } finally { setAcSaving(false); }
+                            }}
+                            className="rounded-lg bg-accent px-4 py-1.5 text-xs font-semibold text-white hover:bg-accent/80 disabled:opacity-60 transition-colors"
+                          >{acSaving ? "Saving…" : "Save Changes"}</button>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
                   {/* ── Totals block ── */}
                   <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
@@ -1321,6 +1400,12 @@ export default function SalesOrdersPage() {
                         <span>Subtotal</span>
                         <span className="font-mono">{fmt(detailSubtotal)}</span>
                       </div>
+                      {acItems.map((c, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm text-slate-400">
+                          <span>{c.label}</span>
+                          <span className="font-mono">{fmt(c.amount)}</span>
+                        </div>
+                      ))}
                       <div className="flex items-center justify-between text-sm text-slate-400">
                         <span>
                           GST{" "}
