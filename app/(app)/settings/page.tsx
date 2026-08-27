@@ -7,23 +7,26 @@ import { MODULE_NAV } from "@/lib/nav";
 
 // ─── Permission data ──────────────────────────────────────────────────────────
 
-const ALL_ROLES = ["admin", "manager", "operator", "viewer"] as const;
+const ALL_ROLES = ["admin", "manager", "operator", "offer_maker", "viewer"] as const;
 type Role = (typeof ALL_ROLES)[number];
 
 /**
- * Role-based default access map for all 9 modules.
+ * Role-based default access map for all modules.
  * Actual per-user access is controlled by `allowed_modules` in the DB.
  */
 const MODULE_PERMISSIONS: Record<string, Role[]> = {
-  dashboard: ["admin", "manager", "operator", "viewer"],
+  dashboard:       ["admin", "manager", "operator", "offer_maker", "viewer"],
+  companies:       ["admin", "manager", "operator", "offer_maker"],
+  enquiries:       ["admin", "manager", "operator", "offer_maker"],
+  offers:          ["admin", "manager", "operator", "offer_maker"],
   purchase_orders: ["admin", "manager"],
-  sales_orders: ["admin", "manager"],
-  inventory: ["admin", "manager", "operator"],
-  products_boq: ["admin", "manager"],
-  pricing: ["admin", "manager"],
-  work_orders: ["admin", "manager", "operator"],
-  finished_goods: ["admin", "manager", "operator"],
-  settings: ["admin"],
+  sales_orders:    ["admin", "manager"],
+  inventory:       ["admin", "manager", "operator"],
+  products_boq:    ["admin", "manager", "offer_maker"],
+  pricing:         ["admin", "manager"],
+  work_orders:     ["admin", "manager", "operator"],
+  finished_goods:  ["admin", "manager", "operator"],
+  settings:        ["admin"],
 };
 
 const MODULE_ICONS: Record<string, string> = {
@@ -42,6 +45,7 @@ const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   manager: "Manager",
   operator: "Operator",
+  offer_maker: "Offer Maker",
   viewer: "Viewer",
 };
 
@@ -49,6 +53,7 @@ const ROLE_BADGE: Record<Role, string> = {
   admin: "border-red-700/40 bg-red-950/40 text-red-300",
   manager: "border-blue-700/40 bg-blue-950/40 text-blue-300",
   operator: "border-amber-700/40 bg-amber-950/40 text-amber-300",
+  offer_maker: "border-violet-700/40 bg-violet-950/40 text-violet-300",
   viewer: "border-slate-600/40 bg-slate-800/40 text-slate-300",
 };
 

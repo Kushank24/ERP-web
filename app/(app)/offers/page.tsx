@@ -1,0 +1,774 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react"; // useRef kept for specsLoadedRef
+import { api, apiBlob } from "@/lib/api";
+import { ProductCombobox } from "@/components/ProductCombobox";
+
+interface Company { id: number; name: string; }
+interface Enquiry { id: number; enquiry_number: string; }
+interface Product { id: number; name: string; default_unit_price: number; }
+interface SpecSlot { specification_id: number; spec_name: string; display_order: number; }
+interface SpecValue { specification_id: number; value: string; }
+interface OfferItem {
+  id?: number; product_id?: number | null; description: string;
+  quantity: number; unit_price: number; total_price?: number;
+  specifications?: Array<{ specification_id: number; value: string; spec_name: string; }>;
+}
+interface OfferRow {
+  id: number; offer_number: string; company_name: string | null; enquiry_number: string | null;
+  offer_date: string; valid_until: string | null; status: string; total_amount: number; currency: string;
+}
+interface OfferDetail extends OfferRow {
+  company_id: number | null; enquiry_id: number | null;
+  packing_charges_pct: number; freight_charges: number; gst_pct: number; subtotal: number;
+  terms_conditions: string | null; notes: string | null; sales_order_id: number | null;
+  company_gstin: string | null; company_address: string | null; contact_person: string | null;
+  follow_up_comments: string | null; follow_up_completed: boolean;
+  items: OfferItem[];
+}
+
+type DraftItem = { product_id: number | null; description: string; quantity: number; unit_price: number; specs: SpecValue[]; };
+const BLANK_ITEM: DraftItem = { product_id: null, description: "", quantity: 1, unit_price: 0, specs: [] };
+const BLANK_FORM = {
+  company_id: "" as string | number, enquiry_id: "" as string | number,
+  offer_number: "", offer_date: new Date().toISOString().slice(0, 10),
+  valid_until: "", currency: "INR",
+  packing_charges_pct: 0, freight_charges: 0, gst_pct: 18,
+  terms_conditions: "", notes: "", items: [] as DraftItem[],
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  draft: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+  sent: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  accepted: "bg-green-500/20 text-green-400 border-green-500/30",
+  rejected: "bg-red-500/20 text-red-400 border-red-500/30",
+  expired: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+};
+
+function fmtDate(d: string | null | undefined) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+function fmt(n: number | string) { return "₹" + Number(n).toFixed(2); }
+
+function StatusBadge({ status }: { status: string }) {
+  const cls = STATUS_COLORS[status] || "bg-slate-500/20 text-slate-400 border-slate-500/30";
+  return <span className={"inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide " + cls}>{status}</span>;
+}
+function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={"animate-pulse rounded bg-surface-border/40 " + className} />;
+}
+function ErrorAlert({ message }: { message: string }) {
+  return (
+    <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-3 text-sm text-red-400">
+      <span className="mt-px shrink-0 text-base leading-none">⚠</span>
+      <span className="leading-snug">{message}</span>
+    </div>
+  );
+}
+
+const PAGE_SIZE = 50;
+
+export default function OffersPage() {
+  const [rows, setRows] = useState<OfferRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [rowOffset, setRowOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<OfferDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const [showForm, setShowForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [form, setForm] = useState(BLANK_FORM);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [productSpecs, setProductSpecs] = useState<Record<number, SpecSlot[]>>({});
+  const specsLoadedRef = useRef<Set<number>>(new Set());
+
+  const fetchPage = useCallback((q: string, status: string, off: number, append: boolean) => {
+    if (!append) setListLoading(true); else setLoadingMore(true);
+    setListError(null);
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(off) });
+    if (q) params.set("q", q);
+    if (status) params.set("status", status);
+    api<{ data: OfferRow[]; total: number }>(`/api/v1/offers?${params}`)
+      .then(res => {
+        setRows(prev => append ? [...prev, ...res.data] : res.data);
+        setTotal(res.total);
+        setRowOffset(off + res.data.length);
+        setListLoading(false); setLoadingMore(false);
+      })
+      .catch((e: Error) => { setListError(e.message); setListLoading(false); setLoadingMore(false); });
+  }, []);
+
+  const loadList = useCallback(() => {
+    fetchPage(searchText, filterStatus, 0, false);
+  }, [fetchPage, searchText, filterStatus]);
+
+  useEffect(() => {
+    fetchPage("", "", 0, false);
+    api<{ data: Company[]; total: number }>("/api/v1/companies?limit=2000")
+      .then(res => setCompanies(res.data)).catch(() => {});
+    api<{ data: Enquiry[]; total: number }>("/api/v1/enquiries?limit=2000")
+      .then(res => setEnquiries(res.data)).catch(() => {});
+  }, []);
+
+  // Debounce search → server
+  useEffect(() => {
+    const t = setTimeout(() => { setSearchText(searchInput); fetchPage(searchInput, filterStatus, 0, false); }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Status filter → server
+  useEffect(() => {
+    fetchPage(searchText, filterStatus, 0, false);
+  }, [filterStatus]);
+
+  const loadDetail = useCallback((id: number) => {
+    setDetailLoading(true); setDetailError(null); setDetail(null);
+    api<OfferDetail>("/api/v1/offers/" + id)
+      .then(d => { setDetail(d); setDetailLoading(false); })
+      .catch((e: Error) => { setDetailError(e.message); setDetailLoading(false); });
+  }, []);
+
+  function handleRowClick(id: number) {
+    setSelectedId(id); setShowForm(false); setSaveError(null); loadDetail(id);
+  }
+
+  function suggestOfferNumber() {
+    const year = new Date().getFullYear();
+    const seq = (rows.filter(o => o.offer_number.startsWith("OFF-" + year)).length + 1).toString().padStart(4, "0");
+    return "OFF-" + year + "-" + seq;
+  }
+
+  function openNew() {
+    setIsEditing(false); setForm({ ...BLANK_FORM, offer_number: suggestOfferNumber() });
+    setSaveError(null); setShowForm(true); setSelectedId(null); setDetail(null);
+  }
+
+  function startEdit() {
+    if (!detail) return;
+    setForm({
+      company_id: detail.company_id ?? "", enquiry_id: detail.enquiry_id ?? "",
+      offer_number: detail.offer_number,
+      offer_date: detail.offer_date?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+      valid_until: detail.valid_until?.slice(0, 10) || "",
+      currency: detail.currency,
+      packing_charges_pct: Number(detail.packing_charges_pct),
+      freight_charges: Number(detail.freight_charges),
+      gst_pct: Number(detail.gst_pct),
+      terms_conditions: detail.terms_conditions || "",
+      notes: detail.notes || "",
+      items: (detail.items ?? []).map(i => ({
+        product_id: i.product_id ?? null,
+        description: i.description,
+        quantity: i.quantity,
+        unit_price: Number(i.unit_price),
+        specs: (i.specifications ?? []).map(s => ({ specification_id: s.specification_id, value: s.value })),
+      })),
+    });
+    setIsEditing(true); setSaveError(null); setShowForm(true);
+    (detail.items ?? []).forEach(i => { if (i.product_id) loadProductSpecs(i.product_id); });
+  }
+
+  function closePanel() {
+    setShowForm(false); setIsEditing(false); setSelectedId(null); setDetail(null); setSaveError(null);
+  }
+
+  function closeForm() {
+    setShowForm(false); setIsEditing(false); setSaveError(null);
+    if (selectedId !== null) loadDetail(selectedId);
+  }
+
+  function loadProductSpecs(productId: number) {
+    if (specsLoadedRef.current.has(productId)) return;
+    specsLoadedRef.current.add(productId);
+    api<SpecSlot[]>("/api/v1/products/" + productId + "/specifications")
+      .then(slots => setProductSpecs(prev => ({ ...prev, [productId]: slots })))
+      .catch(() => specsLoadedRef.current.delete(productId));
+  }
+
+  function handleProductSelect(idx: number, product: Product | null) {
+    setForm(f => ({
+      ...f,
+      items: f.items.map((it, i) => i === idx ? {
+        ...it,
+        product_id: product ? product.id : null,
+        description: product ? product.name : "",
+        unit_price: product && product.default_unit_price > 0 ? product.default_unit_price : it.unit_price,
+        specs: [],
+      } : it),
+    }));
+    if (product) loadProductSpecs(product.id);
+  }
+
+  function updateSpec(idx: number, specificationId: number, value: string) {
+    setForm(f => ({
+      ...f,
+      items: f.items.map((it, i) => {
+        if (i !== idx) return it;
+        const hasSpec = it.specs.some(s => s.specification_id === specificationId);
+        const newSpecs = hasSpec
+          ? it.specs.map(s => s.specification_id === specificationId ? { ...s, value } : s)
+          : [...it.specs, { specification_id: specificationId, value }];
+        return { ...it, specs: newSpecs };
+      }),
+    }));
+  }
+
+  function addItem() { setForm(f => ({ ...f, items: [...f.items, { ...BLANK_ITEM }] })); }
+  function removeItem(idx: number) { setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) })); }
+  function updateItem(idx: number, field: keyof DraftItem, value: string | number) {
+    setForm(f => ({ ...f, items: f.items.map((it, i) => i === idx ? { ...it, [field]: value } : it) }));
+  }
+
+  function calcTotals() {
+    const subtotal = form.items.reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
+    const packing = subtotal * (Number(form.packing_charges_pct) / 100);
+    const assessable = subtotal + packing + Number(form.freight_charges);
+    const gst = assessable * (Number(form.gst_pct) / 100);
+    return { subtotal, total: assessable + gst };
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.offer_number.trim()) { setSaveError("Offer number is required"); return; }
+    setSaving(true); setSaveError(null);
+    try {
+      const payload = {
+        company_id: form.company_id ? Number(form.company_id) : null,
+        enquiry_id: form.enquiry_id ? Number(form.enquiry_id) : null,
+        offer_number: form.offer_number.trim(),
+        offer_date: form.offer_date, valid_until: form.valid_until || null,
+        currency: form.currency,
+        packing_charges_pct: Number(form.packing_charges_pct),
+        freight_charges: Number(form.freight_charges),
+        gst_pct: Number(form.gst_pct),
+        terms_conditions: form.terms_conditions || null,
+        notes: form.notes || null,
+        items: form.items.map(i => ({
+          product_id: i.product_id || null,
+          description: i.description,
+          quantity: Number(i.quantity),
+          unit_price: Number(i.unit_price),
+          specifications: i.specs.filter(s => s.value.trim()).map(s => ({
+            specification_id: s.specification_id,
+            value: s.value,
+          })),
+        })),
+      };
+      let saved: OfferDetail;
+      if (isEditing && selectedId) {
+        saved = await api<OfferDetail>("/api/v1/offers/" + selectedId, { method: "PUT", json: payload });
+      } else {
+        saved = await api<OfferDetail>("/api/v1/offers", { method: "POST", json: payload });
+      }
+      setShowForm(false); setIsEditing(false);
+      setSelectedId(saved.id); setDetail(saved); loadList();
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSaving(false); }
+  }
+
+  async function handleStatusChange(newStatus: string) {
+    if (!detail) return;
+    const extra = newStatus === "accepted" ? "\n\nThis will auto-create a Sales Order." : "";
+    if (!confirm("Mark offer " + detail.offer_number + " as \"" + newStatus + "\"?" + extra)) return;
+    try {
+      const updated = await api<OfferDetail>("/api/v1/offers/" + detail.id + "/status", { method: "PATCH", json: { status: newStatus } });
+      setDetail(updated);
+      setRows(prev => prev.map(r => r.id === updated.id ? { ...r, status: updated.status } : r));
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Failed"); }
+  }
+
+  async function handleDownload() {
+    if (!detail) return;
+    setDownloading(true);
+    try {
+      const { blob } = await apiBlob("/api/v1/offers/" + detail.id + "/pdf");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "Offer-" + detail.offer_number + ".pdf"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Download failed");
+    } finally { setDownloading(false); }
+  }
+
+  async function handleDelete() {
+    if (!detail) return;
+    if (!confirm("Delete offer " + detail.offer_number + "?")) return;
+    try {
+      await api("/api/v1/offers/" + detail.id, { method: "DELETE" });
+      closePanel(); loadList();
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Delete failed"); }
+  }
+
+  const panelOpen = showForm || selectedId !== null;
+  const filteredRows = rows;
+  const hasMore = rows.length < total;
+
+  const { subtotal: fSubtotal, total: fTotal } = calcTotals();
+
+  return (
+    <div className="flex h-[calc(100vh-7rem)] min-h-0 gap-5">
+
+      <div className={"flex min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-surface-border bg-surface-card transition-all duration-300 ease-in-out " + (panelOpen ? "w-[38%]" : "w-full")}>
+
+        <div className="flex shrink-0 items-center justify-between border-b border-surface-border px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Offers & Quotations</h2>
+            <p className="text-[11px] text-slate-500">
+              {listLoading ? "Loading…" : `${rows.length} of ${total} offer${total !== 1 ? "s" : ""}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={loadList} disabled={listLoading}
+              className="flex items-center gap-1.5 rounded-lg border border-surface-border px-3 py-1.5 text-[11px] text-slate-400 hover:border-slate-500 hover:text-white disabled:opacity-40">
+              <span className={"inline-block " + (listLoading ? "animate-spin" : "")}>↻</span> Refresh
+            </button>
+            <button onClick={openNew}
+              className="flex items-center gap-1 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-[11px] font-medium text-accent hover:bg-accent/20">
+              + New
+            </button>
+          </div>
+        </div>
+
+        <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2 flex gap-2">
+          <input type="search" placeholder="Search…" value={searchInput} onChange={e => setSearchInput(e.target.value)}
+            className="flex-1 rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none focus:border-accent/50" />
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-accent/50">
+            <option value="">All</option>
+            {["draft","sent","accepted","rejected","expired"].map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+            <span>Offer #</span><span>Company</span><span className="text-right">Amount</span><span>Status</span>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {listLoading ? (
+            <div className="space-y-px p-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg px-2 py-3">
+                  <Skeleton className="h-3.5 w-24" /><Skeleton className="h-3.5 flex-1" />
+                  <Skeleton className="h-3.5 w-16" /><Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+              ))}
+            </div>
+          ) : listError ? (
+            <div className="p-4"><ErrorAlert message={listError} /></div>
+          ) : filteredRows.length === 0 ? (
+            <div className="flex h-40 items-center justify-center text-sm text-slate-600">
+              {filterStatus || searchInput ? "No offers match the filter." : "No offers yet. Click + New to add one."}
+            </div>
+          ) : (
+            <>
+            <ul>
+              {filteredRows.map(row => {
+                const isActive = row.id === selectedId;
+                return (
+                  <li key={row.id}>
+                    <button type="button" onClick={() => handleRowClick(row.id)}
+                      className={"w-full border-b border-surface-border/30 px-4 py-3 text-left last:border-b-0 transition-colors " + (isActive ? "border-l-2 border-l-accent bg-accent/10" : "hover:bg-white/[0.025]")}>
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_auto] items-center gap-2">
+                        <span className={"truncate text-xs font-semibold " + (isActive ? "text-accent" : "text-white")}>{row.offer_number}</span>
+                        <span className="truncate text-xs text-slate-400">{row.company_name || "—"}</span>
+                        <span className="text-right font-mono text-xs text-slate-300">{fmt(row.total_amount)}</span>
+                        <StatusBadge status={row.status} />
+                      </div>
+                      <div className="mt-1 text-[10px] text-slate-600">
+                        {fmtDate(row.offer_date)}{row.enquiry_number ? " · " + row.enquiry_number : ""}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {hasMore && (
+              <div className="border-t border-surface-border/30 p-3">
+                <button onClick={() => fetchPage(searchText, filterStatus, rowOffset, true)} disabled={loadingMore}
+                  className="w-full rounded-lg border border-surface-border/60 py-2 text-xs text-slate-400 hover:border-accent/40 hover:text-accent disabled:opacity-50">
+                  {loadingMore ? "Loading…" : `Load more (${total - rows.length} remaining)`}
+                </button>
+              </div>
+            )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {panelOpen && (
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-surface-border bg-surface-card">
+
+          <div className="flex shrink-0 items-center justify-between border-b border-surface-border px-5 py-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">
+                {showForm ? (isEditing ? "Edit Offer" : "New Offer") : "Offer Detail"}
+              </h2>
+              {!showForm && detail && (
+                <p className="text-[11px] text-slate-500">{detail.offer_number} · {fmtDate(detail.offer_date)}</p>
+              )}
+            </div>
+            <button type="button" onClick={closePanel}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-white/[0.06] hover:text-white">
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+
+            {showForm && (
+              <form onSubmit={handleSave} className="space-y-6 p-6">
+                {saveError && <ErrorAlert message={saveError} />}
+
+                <section>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Offer Details</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Offer Number *</label>
+                      <input value={form.offer_number} onChange={e => setForm(f => ({ ...f, offer_number: e.target.value }))} required
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Offer Date</label>
+                      <input type="date" value={form.offer_date} onChange={e => setForm(f => ({ ...f, offer_date: e.target.value }))}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white [color-scheme:dark] outline-none focus:border-accent/70" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Valid Until</label>
+                      <input type="date" value={form.valid_until} onChange={e => setForm(f => ({ ...f, valid_until: e.target.value }))}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white [color-scheme:dark] outline-none focus:border-accent/70" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Currency</label>
+                      <select value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70">
+                        <option value="INR">INR (₹)</option>
+                        <option value="USD">USD ($)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Company</label>
+                      <select value={form.company_id} onChange={e => setForm(f => ({ ...f, company_id: e.target.value }))}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70">
+                        <option value="">— None —</option>
+                        {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Linked Enquiry</label>
+                      <select value={form.enquiry_id} onChange={e => setForm(f => ({ ...f, enquiry_id: e.target.value }))}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70">
+                        <option value="">— None —</option>
+                        {enquiries.map(eq => <option key={eq.id} value={eq.id}>{eq.enquiry_number}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Charges</p>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Packing (%)</label>
+                      <input type="number" step="0.01" min="0" value={form.packing_charges_pct}
+                        onChange={e => setForm(f => ({ ...f, packing_charges_pct: Number(e.target.value) }))}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Freight (₹)</label>
+                      <input type="number" step="0.01" min="0" value={form.freight_charges}
+                        onChange={e => setForm(f => ({ ...f, freight_charges: Number(e.target.value) }))}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">GST (%)</label>
+                      <input type="number" step="0.01" min="0" value={form.gst_pct}
+                        onChange={e => setForm(f => ({ ...f, gst_pct: Number(e.target.value) }))}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      Items <span className="ml-1 rounded-full bg-surface-border px-1.5 py-0.5 text-[10px] font-normal text-slate-400">{form.items.length}</span>
+                    </p>
+                    <button type="button" onClick={addItem}
+                      className="flex items-center gap-1 rounded-lg border border-surface-border px-3 py-1.5 text-xs text-slate-400 hover:border-accent hover:text-accent">
+                      + Add Item
+                    </button>
+                  </div>
+                  {form.items.length > 0 && (
+                    <>
+                      <div className="grid grid-cols-[1fr_5rem_7rem_auto] gap-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                        <span>Product / Description</span><span>Qty</span><span>Unit Price</span><span />
+                      </div>
+                      <div className="space-y-2">
+                        {form.items.map((it, idx) => {
+                          const lineTotal = Number(it.quantity) * Number(it.unit_price);
+                          const slots = it.product_id ? productSpecs[it.product_id] : undefined;
+                          return (
+                            <div key={idx} className="rounded-lg border border-surface-border/60 bg-[#0f1419] p-2.5">
+                              <div className="grid grid-cols-[1fr_5rem_7rem_auto] items-center gap-2">
+                                <ProductCombobox
+                                  value={it.product_id ? { id: it.product_id, name: it.description } : null}
+                                  onSelect={p => handleProductSelect(idx, p)}
+                                  hasSpecs
+                                />
+                                <input type="number" min={1} value={it.quantity} onChange={e => updateItem(idx, "quantity", Number(e.target.value))}
+                                  className="rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-white outline-none hover:border-surface-border focus:border-accent/60 focus:bg-[#0b0f14]" />
+                                <input type="number" step="0.01" min={0} value={it.unit_price} onChange={e => updateItem(idx, "unit_price", Number(e.target.value))}
+                                  className="rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-white outline-none hover:border-surface-border focus:border-accent/60 focus:bg-[#0b0f14]" />
+                                <button type="button" onClick={() => removeItem(idx)} className="rounded p-1 text-slate-600 hover:text-red-400">✕</button>
+                              </div>
+
+                              <input value={it.description} onChange={e => updateItem(idx, "description", e.target.value)} placeholder="Description *"
+                                className="mt-1.5 w-full rounded border border-surface-border/50 bg-[#0b0f14] px-2 py-1.5 text-xs text-white placeholder-slate-600 outline-none focus:border-accent/60" />
+
+                              {slots && slots.length > 0 && (
+                                <div className="mt-2 rounded border border-surface-border/40 bg-[#0b0f14]/60 p-2">
+                                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">Specifications</p>
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {slots.map(slot => (
+                                      <label key={slot.specification_id} className="flex flex-col gap-0.5">
+                                        <span className="truncate text-[10px] text-slate-500" title={slot.spec_name}>{slot.spec_name}</span>
+                                        <input
+                                          value={it.specs.find(s => s.specification_id === slot.specification_id)?.value ?? ""}
+                                          onChange={e => updateSpec(idx, slot.specification_id, e.target.value)}
+                                          className="rounded border border-surface-border/50 bg-[#0f1419] px-2 py-1 text-[11px] text-white placeholder-slate-700 outline-none focus:border-accent/60" />
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="mt-1 pr-7 text-right font-mono text-[11px] text-slate-500">{fmt(lineTotal)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-3 space-y-1.5 rounded-lg border border-surface-border bg-[#0f1419] p-3">
+                        <div className="flex justify-between text-sm text-slate-400"><span>Subtotal</span><span className="font-mono">{fmt(fSubtotal)}</span></div>
+                        <div className="flex justify-between text-sm text-slate-400"><span>GST ({form.gst_pct}%)</span><span className="font-mono">{fmt(fTotal - fSubtotal)}</span></div>
+                        <div className="flex justify-between border-t border-surface-border pt-2 text-base font-semibold text-white">
+                          <span>Total</span><span className="font-mono text-accent">{fmt(fTotal)}</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </section>
+
+                <section>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Terms & Notes</p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Terms & Conditions</label>
+                      <textarea value={form.terms_conditions} onChange={e => setForm(f => ({ ...f, terms_conditions: e.target.value }))} rows={4}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Notes</label>
+                      <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                    </div>
+                  </div>
+                </section>
+
+                <div className="flex items-center justify-end gap-3 pb-1">
+                  <button type="button" onClick={closeForm}
+                    className="rounded-lg border border-surface-border px-5 py-2 text-sm text-slate-400 hover:text-white">
+                    Cancel
+                  </button>
+                  {isEditing && detail?.status !== "accepted" && (
+                    <button type="button" onClick={handleDelete}
+                      className="rounded-lg border border-red-500/30 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10">
+                      Delete
+                    </button>
+                  )}
+                  <button type="submit" disabled={saving}
+                    className="flex min-w-[9rem] items-center justify-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60">
+                    {saving
+                      ? <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white" /> Saving…</>
+                      : isEditing ? "Update" : "Create Offer"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {!showForm && selectedId !== null && (
+              <div className="space-y-5 p-6">
+                {detailError && <ErrorAlert message={detailError} />}
+                {detailLoading ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-8 w-48" />
+                    <Skeleton className="h-24 rounded-xl" />
+                    <Skeleton className="h-48 rounded-xl" />
+                    <Skeleton className="h-28 rounded-xl" />
+                  </div>
+                ) : detail ? (
+                  <>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-xl font-bold text-white">{detail.offer_number}</h3>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {fmtDate(detail.offer_date)}{detail.valid_until ? " · valid until " + fmtDate(detail.valid_until) : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <StatusBadge status={detail.status} />
+                        {detail.status !== "accepted" && (
+                          <button type="button" onClick={startEdit}
+                            className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white">
+                            Edit
+                          </button>
+                        )}
+                        <button type="button" onClick={handleDownload} disabled={downloading}
+                          className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white disabled:opacity-50">
+                          {downloading ? "…" : "↓ PDF"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {detail.status !== "accepted" && detail.status !== "rejected" && (
+                      <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                        <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Update Status</p>
+                        <div className="flex flex-wrap gap-2">
+                          {detail.status === "draft" && (
+                            <button type="button" onClick={() => handleStatusChange("sent")}
+                              className="rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-500/20">
+                              Mark as Sent
+                            </button>
+                          )}
+                          {(detail.status === "draft" || detail.status === "sent") && (
+                            <>
+                              <button type="button" onClick={() => handleStatusChange("accepted")}
+                                className="rounded-full border border-green-500/40 bg-green-500/10 px-3 py-1.5 text-xs font-medium text-green-400 hover:bg-green-500/20">
+                                Accept → Create SO
+                              </button>
+                              <button type="button" onClick={() => handleStatusChange("rejected")}
+                                className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20">
+                                Reject
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {detail.status === "accepted" && detail.sales_order_id && (
+                      <div className="rounded-xl border border-green-500/20 bg-green-500/5 px-4 py-3 text-sm text-green-400">
+                        ✓ Sales Order auto-created · SO-{detail.offer_number}
+                      </div>
+                    )}
+
+                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Company</p>
+                      <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+                        <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Name</p><p className="text-sm text-white">{detail.company_name || "—"}</p></div>
+                        <div><p className="text-[10px] uppercase tracking-wider text-slate-500">GSTIN</p><p className="font-mono text-sm text-white">{detail.company_gstin || "—"}</p></div>
+                        {detail.contact_person && <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Contact</p><p className="text-sm text-white">{detail.contact_person}</p></div>}
+                        {detail.enquiry_number && <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Enquiry</p><p className="text-sm text-white">{detail.enquiry_number}</p></div>}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Items <span className="ml-1 rounded-full bg-surface-border px-1.5 py-0.5 font-normal text-slate-400">{(detail.items ?? []).length}</span>
+                      </p>
+                      <div className="overflow-hidden rounded-xl border border-surface-border">
+                        <table className="w-full text-sm">
+                          <thead className="border-b border-surface-border bg-[#0f1419]/80">
+                            <tr>
+                              {["Description","Qty","Unit Price","Total"].map(h => (
+                                <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(detail.items ?? []).length === 0 ? (
+                              <tr><td colSpan={4} className="px-3 py-4 text-center text-xs text-slate-600">No items.</td></tr>
+                            ) : (detail.items ?? []).map((it, i) => (
+                              <tr key={i} className={"border-t border-surface-border/40 " + (i % 2 === 1 ? "bg-white/[0.015]" : "")}>
+                                <td className="px-3 py-2.5 text-xs font-medium text-white">
+                                  {it.description}
+                                  {(it.specifications ?? []).length > 0 && (
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                      {(it.specifications ?? []).map(s => (
+                                        <span key={s.specification_id} className="rounded bg-surface-border/60 px-1.5 py-0.5 text-[10px] font-normal text-slate-400">
+                                          {s.spec_name}: <span className="text-slate-200">{s.value}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 align-top text-xs text-slate-300">{it.quantity}</td>
+                                <td className="px-3 py-2.5 align-top font-mono text-xs text-slate-300">{fmt(it.unit_price)}</td>
+                                <td className="px-3 py-2.5 align-top font-mono text-xs font-semibold text-white">{fmt(it.total_price ?? it.quantity * it.unit_price)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const dSubtotal = Number(detail.subtotal);
+                      const dPacking = dSubtotal * Number(detail.packing_charges_pct) / 100;
+                      const dAssessable = dSubtotal + dPacking + Number(detail.freight_charges);
+                      const dGst = dAssessable * Number(detail.gst_pct) / 100;
+                      return (
+                        <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                          <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Summary</p>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm text-slate-400"><span>Subtotal</span><span className="font-mono">{fmt(dSubtotal)}</span></div>
+                            {dPacking > 0 && <div className="flex justify-between text-sm text-slate-400"><span>Packing ({detail.packing_charges_pct}%)</span><span className="font-mono">{fmt(dPacking)}</span></div>}
+                            {Number(detail.freight_charges) > 0 && <div className="flex justify-between text-sm text-slate-400"><span>Freight</span><span className="font-mono">{fmt(detail.freight_charges)}</span></div>}
+                            <div className="flex justify-between text-sm text-slate-400"><span>GST ({detail.gst_pct}%)</span><span className="font-mono">{fmt(dGst)}</span></div>
+                            <div className="flex justify-between border-t border-surface-border pt-2 text-base font-semibold text-white">
+                              <span>Grand Total</span><span className="font-mono text-accent">{fmt(detail.total_amount)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {detail.terms_conditions && (
+                      <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Terms & Conditions</p>
+                        <p className="whitespace-pre-line text-sm leading-relaxed text-slate-300">{detail.terms_conditions}</p>
+                      </div>
+                    )}
+                    {detail.notes && (
+                      <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Notes</p>
+                        <p className="text-sm text-slate-300">{detail.notes}</p>
+                      </div>
+                    )}
+                  </>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

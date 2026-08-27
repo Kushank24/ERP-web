@@ -1,39 +1,13 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { supabaseAnonKey, supabaseUrl } from "./env";
-
-export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
-
-  const supabase = createServerClient(supabaseUrl(), supabaseAnonKey(), {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(
-        cookiesToSet: {
-          name: string;
-          value: string;
-          options: CookieOptions;
-        }[]
-      ) {
-        cookiesToSet.forEach(({ name, value }) =>
-          request.cookies.set(name, value)
-        );
-        supabaseResponse = NextResponse.next({
-          request,
-        });
-        cookiesToSet.forEach(({ name, value, options }) =>
-          supabaseResponse.cookies.set(name, value, options)
-        );
-      },
-    },
-  });
-
-  await supabase.auth.getUser();
-
-  return supabaseResponse;
+// All pages in this app are client-rendered ("use client") and auth is
+// validated by the FastAPI backend on every API call. There is no Server
+// Component that needs a server-side Supabase session, so we do not call
+// supabase.auth.getSession() here — that call can trigger a Supabase auth
+// server round-trip which shows up as "The user aborted a request. Retrying"
+// spam in development and adds latency on every page navigation.
+// Token refresh is handled entirely by the Supabase onAuthStateChange listener
+// in the browser (auth-context.tsx).
+export function updateSession(request: NextRequest) {
+  return NextResponse.next({ request });
 }
