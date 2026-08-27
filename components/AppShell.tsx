@@ -69,6 +69,25 @@ function NavIcon({ name, className = "h-4 w-4" }: { name: string; className?: st
         <path d="M10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.55 4.55l1.77 1.77M13.68 13.68l1.77 1.77M4.55 15.45l1.77-1.77M13.68 6.32l1.77-1.77" />
       </>
     ),
+    companies: (
+      <>
+        <path d="M3 17V7a1 1 0 011-1h4V4a1 1 0 011-1h4a1 1 0 011 1v2h4a1 1 0 011 1v10" />
+        <path d="M1 17h18" />
+        <path d="M8 17v-4h4v4" />
+      </>
+    ),
+    enquiries: (
+      <>
+        <circle cx="10" cy="10" r="8" />
+        <path d="M10 6v4l3 3" />
+      </>
+    ),
+    offers: (
+      <>
+        <path d="M4 4h12a1 1 0 011 1v8a1 1 0 01-1 1H7l-4 3V5a1 1 0 011-1z" />
+        <path d="M8 9h4M8 12h2" />
+      </>
+    ),
     logout: (
       <>
         <path d="M8 3H5a1 1 0 00-1 1v12a1 1 0 001 1h3" />
@@ -98,6 +117,7 @@ function NavIcon({ name, className = "h-4 w-4" }: { name: string; className?: st
 
 const NAV_GROUPS: { label: string; keys: string[] }[] = [
   { label: "Overview", keys: ["dashboard"] },
+  { label: "CRM", keys: ["companies", "enquiries", "offers"] },
   { label: "Procurement", keys: ["purchase_orders"] },
   { label: "Production", keys: ["work_orders", "products_boq", "inventory", "finished_goods"] },
   { label: "Sales", keys: ["sales_orders", "pricing"] },

@@ -43,27 +43,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const supabase = createClient();
 
-    // Prefer getUser() over getSession() — validates the token against the
-    // Supabase server so we are never working with a stale/invalid session.
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !userData.user) {
-      // No active session – clear state quietly.
-      setApiToken(null);
-      setUser(null);
-      setAuthError(null);
-      setLoading(false);
-      return;
-    }
-
-    // Also fetch the session so we have the raw access_token for the API.
+    // getSession() reads from local storage — no Supabase server round-trip.
+    // The FastAPI backend validates the JWT itself, so a stale token will fail
+    // at /auth/me with a 401 and we redirect to login from there.
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
 
     if (!token) {
       setApiToken(null);
       setUser(null);
-      setAuthError("Supabase session has no access token.");
+      setAuthError(null);
       setLoading(false);
       return;
     }

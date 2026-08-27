@@ -1,5 +1,8 @@
 export const MODULE_NAV: Record<string, { href: string; label: string }> = {
   dashboard: { href: "/dashboard", label: "Dashboard" },
+  companies: { href: "/companies", label: "Companies" },
+  enquiries: { href: "/enquiries", label: "Enquiries" },
+  offers: { href: "/offers", label: "Offers & Quotations" },
   purchase_orders: { href: "/purchase-orders", label: "Purchase Orders" },
   sales_orders: { href: "/sales-orders", label: "Sales Orders" },
   inventory: { href: "/inventory", label: "Inventory Management" },
