@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -106,10 +106,16 @@ const inlineCls =
 export default function InventoryPage() {
   /* ── List state ──────────────────────────────────────────────────────── */
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalValue, setTotalValue] = useState(0);
+  const [lowStockCount, setLowStockCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /* ── Search ──────────────────────────────────────────────────────────── */
+  /* ── Search (debounced) ──────────────────────────────────────────────── */
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
   /* ── Inline edit ─────────────────────────────────────────────────────── */
@@ -136,46 +142,39 @@ export default function InventoryPage() {
   const [converting, setConverting] = useState(false);
   const [convertError, setConvertError] = useState<string | null>(null);
 
-  /* ── Load materials ──────────────────────────────────────────────────── */
-  const loadMaterials = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    api<Material[]>("/api/v1/materials")
+  /* ── Load materials (server-side search + pagination) ───────────────── */
+  const PAGE_SIZE = 100;
+
+  interface MatPage { items: Material[]; total: number; total_count: number; total_value: number; low_stock_count: number; }
+
+  const load = useCallback((q: string, offsetVal: number, append: boolean) => {
+    if (append) setLoadingMore(true); else { setLoading(true); setError(null); }
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offsetVal) });
+    if (q.trim()) params.set("q", q.trim());
+    api<MatPage>(`/api/v1/materials?${params}`)
       .then((data) => {
-        setMaterials(data);
-        setLoading(false);
+        setMaterials((prev) => append ? [...prev, ...data.items] : data.items);
+        setTotal(data.total);
+        setTotalCount(data.total_count);
+        setTotalValue(data.total_value);
+        setLowStockCount(data.low_stock_count);
       })
-      .catch((e: Error) => {
-        setError(e.message ?? "Failed to load materials");
-        setLoading(false);
-      });
+      .catch((e: Error) => setError(e.message ?? "Failed to load materials"))
+      .finally(() => { setLoading(false); setLoadingMore(false); });
   }, []);
 
+  // Debounce search input → committed search
   useEffect(() => {
-    loadMaterials();
-  }, [loadMaterials]);
+    const t = setTimeout(() => setSearch(searchInput), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-  /* ── Derived stats ───────────────────────────────────────────────────── */
-  const totalValue = useMemo(
-    () =>
-      materials.reduce(
-        (acc, m) => acc + m.length_weight_nos * m.per_unit_cost,
-        0,
-      ),
-    [materials],
-  );
+  // Reload from top whenever committed search changes
+  useEffect(() => {
+    load(search, 0, false);
+  }, [search, load]);
 
-  const lowStock = useMemo(
-    () => materials.filter((m) => m.length_weight_nos < 10),
-    [materials],
-  );
-
-  /* ── Client-side search filter ───────────────────────────────────────── */
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return materials;
-    return materials.filter((m) => m.name.toLowerCase().includes(q));
-  }, [materials, search]);
+  const filtered = materials; // already server-filtered
 
   /* ── Inline-edit handlers ────────────────────────────────────────────── */
   function startEdit(m: Material) {
@@ -241,7 +240,7 @@ export default function InventoryPage() {
     setAdding(true);
     setAddError(null);
     try {
-      const created = await api<Material>("/api/v1/materials", {
+      await api<Material>("/api/v1/materials", {
         method: "POST",
         json: {
           name: addName.trim(),
@@ -250,7 +249,7 @@ export default function InventoryPage() {
           per_unit_cost: parseFloat(addCost) || 0,
         },
       });
-      setMaterials((prev) => [...prev, created]);
+      load(search, 0, false);
       /* Clear the form and collapse */
       setAddName("");
       setAddQty("");
@@ -307,9 +306,7 @@ export default function InventoryPage() {
           },
         },
       );
-      setMaterials((prev) =>
-        prev.map((m) => (m.id === convertTarget.id ? result.material : m)),
-      );
+      load(search, 0, false);
       closeConvert();
     } catch (e) {
       setConvertError(e instanceof Error ? e.message : "Conversion failed.");
@@ -348,7 +345,7 @@ export default function InventoryPage() {
               {loading ? (
                 <span className="inline-block h-7 w-8 animate-pulse rounded bg-surface-border/50" />
               ) : (
-                materials.length
+                totalCount
               )}
             </p>
             <p className="mt-0.5 text-xs text-slate-600">unique items</p>
@@ -378,14 +375,14 @@ export default function InventoryPage() {
         {/* Low Stock */}
         <div
           className={`flex items-start gap-4 rounded-xl border bg-surface-card p-5 transition-colors ${
-            !loading && lowStock.length > 0
+            !loading && lowStockCount > 0
               ? "border-orange-500/40"
               : "border-surface-border"
           }`}
         >
           <div
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-              !loading && lowStock.length > 0
+              !loading && lowStockCount > 0
                 ? "bg-orange-500/10 text-orange-400"
                 : "bg-surface-border/30 text-slate-600"
             }`}
@@ -397,7 +394,7 @@ export default function InventoryPage() {
               <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
                 Low Stock
               </p>
-              {!loading && lowStock.length > 0 && (
+              {!loading && lowStockCount > 0 && (
                 <span className="inline-flex shrink-0 items-center rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold text-orange-400">
                   ⚠ Alert
                 </span>
@@ -405,7 +402,7 @@ export default function InventoryPage() {
             </div>
             <p
               className={`mt-1 text-2xl font-semibold ${
-                !loading && lowStock.length > 0
+                !loading && lowStockCount > 0
                   ? "text-orange-400"
                   : "text-white"
               }`}
@@ -413,7 +410,7 @@ export default function InventoryPage() {
               {loading ? (
                 <span className="inline-block h-7 w-8 animate-pulse rounded bg-surface-border/50" />
               ) : (
-                lowStock.length
+                lowStockCount
               )}
             </p>
             <p className="mt-0.5 text-xs text-slate-600">
@@ -444,8 +441,9 @@ export default function InventoryPage() {
             <h2 className="text-sm font-semibold text-white">Raw Materials</h2>
             {!loading && (
               <p className="text-[11px] text-slate-500">
-                {filtered.length} of {materials.length}{" "}
-                {materials.length === 1 ? "item" : "items"}
+                {materials.length} of {total}{" "}
+                {total === 1 ? "item" : "items"}
+                {search.trim() ? " matching search" : ""}
               </p>
             )}
           </div>
@@ -456,8 +454,8 @@ export default function InventoryPage() {
             <input
               type="text"
               placeholder="Search by name…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="w-52 rounded-lg border border-surface-border bg-[#0f1419] py-1.5 pl-8 pr-3 text-sm text-white placeholder-slate-600 outline-none transition focus:border-accent/70 focus:ring-1 focus:ring-accent/20"
             />
           </div>
@@ -712,30 +710,28 @@ export default function InventoryPage() {
           </table>
         </div>
 
-        {/* Table footer — totals for visible rows */}
-        {!loading && filtered.length > 0 && (
+        {/* Table footer — count + load more */}
+        {!loading && materials.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-surface-border/60 px-5 py-2.5 text-xs text-slate-500">
             <span>
-              {filtered.length} {filtered.length === 1 ? "item" : "items"}
+              Showing {materials.length} of {total}{" "}
+              {total === 1 ? "item" : "items"}
               {search.trim() && (
                 <span>
-                  {" "}
-                  matching{" "}
+                  {" "}matching{" "}
                   <span className="text-slate-400">&ldquo;{search}&rdquo;</span>
                 </span>
               )}
             </span>
-            <span>
-              Filtered value:{" "}
-              <span className="font-semibold text-white">
-                {fmtINR(
-                  filtered.reduce(
-                    (acc, m) => acc + m.length_weight_nos * m.per_unit_cost,
-                    0,
-                  ),
-                )}
-              </span>
-            </span>
+            {materials.length < total && (
+              <button
+                onClick={() => load(search, materials.length, true)}
+                disabled={loadingMore}
+                className="rounded-lg border border-surface-border px-3 py-1 text-xs text-slate-300 hover:border-accent/40 hover:text-white disabled:opacity-40"
+              >
+                {loadingMore ? "Loading…" : `Load more (${total - materials.length} remaining)`}
+              </button>
+            )}
           </div>
         )}
       </div>
