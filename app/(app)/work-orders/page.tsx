@@ -278,7 +278,7 @@ export default function WorkOrdersPage() {
 
   // ── Load lists for selectors ──────────────────────────────────────────────
   const loadSelectors = useCallback(() => {
-    api<{ items: Product[]; total: number }>("/api/v1/products?page=1&page_size=500")
+    api<{ items: Product[]; total: number }>("/api/v1/products?page=1&page_size=10000")
       .then((data) => setAvailableProducts(data.items))
       .catch(() => {});
     api<Party[]>("/api/v1/work-orders/parties/list")
