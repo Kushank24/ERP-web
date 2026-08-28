@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { ProductCombobox } from "@/components/ProductCombobox";
+import { ProductCombobox, CatalogProduct } from "@/components/ProductCombobox";
 
 interface Company { id: number; name: string; }
 interface EnquiryItem { id?: number; product_name: string | null; quantity: number; specifications: string | null; }
@@ -393,7 +393,7 @@ export default function EnquiriesPage() {
                         <ProductCombobox
                           hasSpecs
                           value={it.product_id ? { id: it.product_id, name: it.product_name } : null}
-                          onSelect={p => setForm(f => ({
+                          onSelect={(p: CatalogProduct | null) => setForm(f => ({
                             ...f,
                             items: f.items.map((x, i) => i === idx ? {
                               ...x,

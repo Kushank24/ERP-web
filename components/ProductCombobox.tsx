@@ -3,15 +3,15 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 
-interface Product { id: number; name: string; default_unit_price: number; }
+export interface CatalogProduct { id: number; model_name: string; code: string | null; category: string | null; }
 
 export function ProductCombobox({ value, onSelect, hasSpecs = false }: {
   value: { id: number; name: string } | null;
-  onSelect: (p: Product | null) => void;
+  onSelect: (p: CatalogProduct | null) => void;
   hasSpecs?: boolean;
 }) {
   const [query, setQuery] = useState(value?.name ?? "");
-  const [results, setResults] = useState<Product[]>([]);
+  const [results, setResults] = useState<CatalogProduct[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -37,15 +37,15 @@ export function ProductCombobox({ value, onSelect, hasSpecs = false }: {
       const params = new URLSearchParams({ page_size: "20" });
       if (q.trim()) params.set("search", q.trim());
       if (hasSpecs) params.set("has_specs", "true");
-      api<{ items: Product[] }>(`/api/v1/products?${params}`)
+      api<{ items: CatalogProduct[] }>(`/api/v1/catalog-products?${params}`)
         .then(res => { setResults(res.items); setLoading(false); })
         .catch(() => setLoading(false));
     }, 200);
   }
 
-  function select(p: Product) {
+  function select(p: CatalogProduct) {
     onSelect(p);
-    setQuery(p.name);
+    setQuery(p.model_name);
     setResults([]);
     setOpen(false);
   }
@@ -81,9 +81,12 @@ export function ProductCombobox({ value, onSelect, hasSpecs = false }: {
           ) : results.map(p => (
             <button key={p.id} type="button" onMouseDown={() => select(p)}
               className="w-full px-3 py-2 text-left text-xs text-slate-200 hover:bg-accent/20 hover:text-white">
-              <span className="font-medium">{p.name}</span>
-              {p.default_unit_price > 0 && (
-                <span className="ml-2 text-slate-500">₹{p.default_unit_price.toFixed(2)}</span>
+              <span className="font-medium">{p.model_name}</span>
+              {p.code && (
+                <span className="ml-2 text-slate-500">{p.code}</span>
+              )}
+              {p.category && (
+                <span className="ml-2 text-slate-600">{p.category}</span>
               )}
             </button>
           ))}
