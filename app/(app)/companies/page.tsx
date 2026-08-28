@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
+import { useSortedData } from "@/lib/useSortedData";
+import { SortHeader } from "@/components/SortHeader";
 
 interface Company {
   id: number; name: string; contact_person: string | null; email: string | null;
@@ -108,7 +110,8 @@ export default function CompaniesPage() {
   }
 
   const panelOpen = showForm;
-  const filtered = companies;
+  const { sorted: filtered, sortKey: coSortKey, sortDir: coSortDir, toggleSort: toggleCoSort } =
+    useSortedData<Company>(companies, "name");
   const hasMore = companies.length < total;
 
   return (
@@ -141,8 +144,10 @@ export default function CompaniesPage() {
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-            <span>Company</span><span>Contact</span><span>Email</span>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-[10px] font-semibold uppercase tracking-wider">
+            <SortHeader label="Company" colKey="name" currentKey={coSortKey as string} currentDir={coSortDir} onSort={k => toggleCoSort(k as keyof Company)} />
+            <SortHeader label="Contact" colKey="contact_person" currentKey={coSortKey as string} currentDir={coSortDir} onSort={k => toggleCoSort(k as keyof Company)} />
+            <SortHeader label="Email" colKey="email" currentKey={coSortKey as string} currentDir={coSortDir} onSort={k => toggleCoSort(k as keyof Company)} />
           </div>
         </div>
 

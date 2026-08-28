@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { api, apiBlob } from "@/lib/api";
+import { useSortedData } from "@/lib/useSortedData";
+import { SortHeader } from "@/components/SortHeader";
 import { ProductCombobox } from "@/components/ProductCombobox";
 
 interface Company { id: number; name: string; contact_person: string | null; phone: string | null; email: string | null; }
@@ -427,7 +429,8 @@ export default function OffersPage() {
   }
 
   const panelOpen = showForm || selectedId !== null;
-  const filteredRows = rows;
+  const { sorted: filteredRows, sortKey: offerSortKey, sortDir: offerSortDir, toggleSort: toggleOfferSort } =
+    useSortedData<OfferRow>(rows, "offer_number");
   const hasMore = rows.length < total;
 
   const { subtotal: fSubtotal, total: fTotal } = calcTotals();
@@ -467,8 +470,11 @@ export default function OffersPage() {
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-            <span>Offer #</span><span>Company</span><span className="text-right">Amount</span><span>Status</span>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider">
+            <SortHeader label="Offer #" colKey="offer_number" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
+            <SortHeader label="Company" colKey="company_name" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
+            <SortHeader label="Amount" colKey="total_amount" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} className="justify-end" />
+            <SortHeader label="Status" colKey="status" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
           </div>
         </div>
 
