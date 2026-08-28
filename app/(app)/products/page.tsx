@@ -30,18 +30,6 @@ type ProductDetail = ProductSummary & {
   bill_of_quantities: BoqLine[];
 };
 
-type SpecCatalogEntry = {
-  id: number;
-  name: string;
-  product_count: number;
-};
-
-type ProductSpec = {
-  specification_id: number;
-  spec_name: string;
-  display_order: number;
-};
-
 type ListResponse = {
   items: ProductSummary[];
   total: number;
@@ -267,167 +255,10 @@ function BoqTable({
   );
 }
 
-// ─── Specifications Panel ─────────────────────────────────────────────────────
-
-function SpecificationsPanel({
-  productId, catalog, onCatalogChange,
-}: {
-  productId: number;
-  catalog: SpecCatalogEntry[];
-  onCatalogChange: () => void;
-}) {
-  const [assigned, setAssigned] = useState<ProductSpec[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<number[]>([]);
-  const [filter, setFilter] = useState("");
-  const [newSpecName, setNewSpecName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    api<ProductSpec[]>(`/api/v1/products/${productId}/specifications`)
-      .then(setAssigned)
-      .catch(() => setAssigned([]))
-      .finally(() => setLoading(false));
-  }, [productId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  function startEdit() {
-    setDraft((assigned ?? []).map((a) => a.specification_id));
-    setFilter(""); setNewSpecName(""); setErr(null); setEditing(true);
-  }
-
-  function toggle(specId: number) {
-    setDraft((p) => (p.includes(specId) ? p.filter((x) => x !== specId) : [...p, specId]));
-  }
-
-  async function handleAddNewSpec() {
-    const name = newSpecName.trim();
-    if (!name) return;
-    setBusy(true); setErr(null);
-    try {
-      const created = await api<SpecCatalogEntry>("/api/v1/products/specifications/catalog", {
-        method: "POST",
-        json: { name },
-      });
-      setNewSpecName("");
-      onCatalogChange();
-      setDraft((p) => (p.includes(created.id) ? p : [...p, created.id]));
-    } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : "Failed to create specification");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleSave() {
-    setBusy(true); setErr(null);
-    try {
-      const updated = await api<ProductSpec[]>(`/api/v1/products/${productId}/specifications`, {
-        method: "PUT",
-        json: { specification_ids: draft },
-      });
-      setAssigned(updated);
-      setEditing(false);
-      onCatalogChange();
-    } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : "Failed to save specifications");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const visible = filter.trim()
-    ? catalog.filter((s) => s.name.toLowerCase().includes(filter.trim().toLowerCase()))
-    : catalog;
-
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-          Specifications
-          {assigned !== null && (
-            <span className="ml-2 rounded-full border border-surface-border bg-[#0f1419] px-2 py-0.5 text-[10px] font-normal normal-case tracking-normal text-slate-400">
-              {assigned.length}
-            </span>
-          )}
-        </p>
-        <button type="button" onClick={editing ? () => setEditing(false) : startEdit} disabled={loading}
-          className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-40">
-          {editing ? "Cancel" : "Manage"}
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="h-8 animate-pulse rounded bg-slate-800/60" />
-      ) : editing ? (
-        <div className="rounded-lg border border-accent/20 bg-accent/5 p-4">
-          <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter specifications…"
-            className="mb-3 w-full rounded border border-surface-border bg-[#0f1419] px-2.5 py-1.5 text-xs text-white placeholder-slate-600 focus:border-accent focus:outline-none" />
-
-          <div className="max-h-64 overflow-y-auto rounded border border-surface-border/60 bg-[#0b0f14] p-2">
-            {visible.length === 0 ? (
-              <p className="py-3 text-center text-xs italic text-slate-600">No specifications match.</p>
-            ) : (
-              <div className="grid gap-1 sm:grid-cols-2">
-                {visible.map((s) => (
-                  <label key={s.id}
-                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors hover:bg-white/[0.04]">
-                    <input type="checkbox" checked={draft.includes(s.id)} onChange={() => toggle(s.id)}
-                      className="h-3.5 w-3.5 shrink-0 accent-[color:var(--accent,#3b82f6)]" />
-                    <span className="min-w-0 flex-1 truncate text-slate-200" title={s.name}>{s.name}</span>
-                    <span className="shrink-0 text-[10px] text-slate-600">{s.product_count}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-3 flex gap-2">
-            <input type="text" value={newSpecName} onChange={(e) => setNewSpecName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddNewSpec(); } }}
-              placeholder="New specification name…"
-              className="min-w-0 flex-1 rounded border border-surface-border bg-[#0f1419] px-2.5 py-1.5 text-xs text-white placeholder-slate-600 focus:border-accent focus:outline-none" />
-            <button type="button" onClick={handleAddNewSpec} disabled={busy || !newSpecName.trim()}
-              className="shrink-0 rounded border border-surface-border px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-accent hover:text-accent disabled:opacity-40">
-              + Create
-            </button>
-          </div>
-
-          {err && <p className="mt-2 text-xs text-red-400" role="alert">{err}</p>}
-
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-[11px] text-slate-500">{draft.length} selected</span>
-            <button type="button" onClick={handleSave} disabled={busy}
-              className="rounded-lg bg-accent px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50">
-              {busy ? "Saving…" : "Save Specifications"}
-            </button>
-          </div>
-        </div>
-      ) : (assigned ?? []).length === 0 ? (
-        <p className="text-xs italic text-slate-500">No specifications linked. Click Manage to add some.</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {(assigned ?? []).map((a) => (
-            <span key={a.specification_id}
-              className="rounded border border-surface-border bg-[#0f1419] px-2 py-0.5 text-[11px] text-slate-300">
-              {a.spec_name}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Product Card ─────────────────────────────────────────────────────────────
 
-function ProductCard({ product, onRefresh, materialNames, specCatalog, onSpecCatalogChange }: {
+function ProductCard({ product, onRefresh, materialNames }: {
   product: ProductSummary; onRefresh: () => void; materialNames: string[];
-  specCatalog: SpecCatalogEntry[]; onSpecCatalogChange: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [boq, setBoq] = useState<BoqLine[] | null>(null);
@@ -439,7 +270,6 @@ function ProductCard({ product, onRefresh, materialNames, specCatalog, onSpecCat
   const [editCode, setEditCode] = useState(product.product_code ?? "");
   const [editCat, setEditCat] = useState(product.category ?? "");
   const [editPrice, setEditPrice] = useState(String(product.default_unit_price));
-  const [editDesc, setEditDesc] = useState(product.description ?? "");
   const [editSaving, setEditSaving] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
 
@@ -473,7 +303,6 @@ function ProductCard({ product, onRefresh, materialNames, specCatalog, onSpecCat
     setEditCode(product.product_code ?? "");
     setEditCat(product.category ?? "");
     setEditPrice(String(product.default_unit_price));
-    setEditDesc(product.description ?? "");
     setEditErr(null);
     setEditing(true);
   }
@@ -491,7 +320,6 @@ function ProductCard({ product, onRefresh, materialNames, specCatalog, onSpecCat
           product_code: editCode.trim() || null,
           category: editCat.trim() || null,
           default_unit_price: parseFloat(editPrice) || 0,
-          description: editDesc.trim() || null,
         },
       });
       setEditing(false);
@@ -596,11 +424,6 @@ function ProductCard({ product, onRefresh, materialNames, specCatalog, onSpecCat
               <input type="number" step="any" min="0" value={editPrice} onChange={(e) => setEditPrice(e.target.value)}
                 className="w-full rounded border border-surface-border bg-[#0f1419] px-2.5 py-1.5 text-sm text-white focus:border-accent focus:outline-none" />
             </div>
-            <div>
-              <label className="mb-1 block text-[10px] font-medium text-slate-400">Description</label>
-              <input type="text" value={editDesc} onChange={(e) => setEditDesc(e.target.value)}
-                className="w-full rounded border border-surface-border bg-[#0f1419] px-2.5 py-1.5 text-sm text-white focus:border-accent focus:outline-none" />
-            </div>
           </div>
           {editErr && <p className="mt-2 text-xs text-red-400" role="alert">{editErr}</p>}
           <div className="mt-3 flex justify-end gap-2">
@@ -619,14 +442,6 @@ function ProductCard({ product, onRefresh, materialNames, specCatalog, onSpecCat
       {/* Expanded body */}
       {open && (
         <div className="space-y-5 border-t border-surface-border px-5 py-5">
-          {product.description && (
-            <p className="text-sm leading-relaxed text-slate-400">{product.description}</p>
-          )}
-
-          <SpecificationsPanel productId={product.id} catalog={specCatalog} onCatalogChange={onSpecCatalogChange} />
-
-          <div className="border-t border-surface-border/50" />
-
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Bill of Quantities</p>
             <button type="button" onClick={() => { setShowAdd((v) => !v); setBoqErr(null); }}
@@ -696,21 +511,16 @@ function ProductCard({ product, onRefresh, materialNames, specCatalog, onSpecCat
 
 // ─── Create Product Panel ─────────────────────────────────────────────────────
 
-function CreatePanel({ onClose, onCreated, materialNames, specCatalog, onSpecCatalogChange }: {
+function CreatePanel({ onClose, onCreated, materialNames }: {
   onClose(): void; onCreated(): void; materialNames: string[];
-  specCatalog: SpecCatalogEntry[]; onSpecCatalogChange: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
-  const [desc, setDesc] = useState("");
   const [cat, setCat] = useState("");
   const [price, setPrice] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
-
-  // Step 2: assign specs after creation
-  const [createdProductId, setCreatedProductId] = useState<number | null>(null);
 
   const addLine = () => setLines((p) => [...p, blankLine()]);
   const removeLine = (key: string) => setLines((p) => p.filter((l) => l.key !== key));
@@ -728,7 +538,6 @@ function CreatePanel({ onClose, onCreated, materialNames, specCatalog, onSpecCat
         json: {
           name: name.trim(),
           ...(code.trim() && { product_code: code.trim() }),
-          ...(desc.trim() && { description: desc.trim() }),
           ...(cat.trim() && { category: cat.trim() }),
           default_unit_price: parseFloat(price) || 0,
           boq_lines: validLines.map((l) => ({
@@ -740,7 +549,7 @@ function CreatePanel({ onClose, onCreated, materialNames, specCatalog, onSpecCat
         },
       });
       onCreated();
-      setCreatedProductId(created.id);
+      onClose();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "Failed to create product");
     } finally {
@@ -764,28 +573,14 @@ function CreatePanel({ onClose, onCreated, materialNames, specCatalog, onSpecCat
         <div className="esafe-slide-down absolute inset-x-0 top-0 z-50 mx-auto max-w-2xl rounded-b-2xl border border-t-0 border-surface-border bg-[#131c27] shadow-2xl">
           <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
             <div>
-              <h2 className="text-base font-semibold text-white">{createdProductId ? "Assign Specifications" : "New Product"}</h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {createdProductId ? `Product "${name}" created · choose which specs apply to it` : "Fill product details and define bill of quantities"}
-              </p>
+              <h2 className="text-base font-semibold text-white">New Product</h2>
+              <p className="mt-0.5 text-xs text-slate-500">Fill product details and define bill of quantities</p>
             </div>
             <button type="button" onClick={onClose}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white">✕</button>
           </div>
 
-          {createdProductId ? (
-            <div className="max-h-[82vh] overflow-y-auto px-6 py-6">
-              <SpecificationsPanel productId={createdProductId} catalog={specCatalog} onCatalogChange={onSpecCatalogChange} />
-              <div className="mt-6 flex justify-end">
-                <button type="button" onClick={onClose}
-                  className="rounded-lg bg-accent px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90">
-                  Done
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          <form onSubmit={handleSubmit} className={createdProductId ? "hidden" : "max-h-[82vh] overflow-y-auto"}>
+          <form onSubmit={handleSubmit} className="max-h-[82vh] overflow-y-auto">
             <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label className="mb-1.5 block text-xs font-medium text-slate-400">Product Name <span className="text-red-400">*</span></label>
@@ -806,11 +601,6 @@ function CreatePanel({ onClose, onCreated, materialNames, specCatalog, onSpecCat
                 <label className="mb-1.5 block text-xs font-medium text-slate-400">Default Unit Price (₹) <span className="text-red-400">*</span></label>
                 <input type="number" step="any" min="0" required placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)}
                   className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white placeholder-slate-600 transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30" />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="mb-1.5 block text-xs font-medium text-slate-400">Description</label>
-                <textarea rows={2} placeholder="Optional product description…" value={desc} onChange={(e) => setDesc(e.target.value)}
-                  className="w-full resize-none rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white placeholder-slate-600 transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30" />
               </div>
             </div>
             <div className="border-t border-surface-border px-6 py-5">
@@ -972,14 +762,6 @@ export default function ProductsPage() {
       .catch(() => {});
   }, []);
 
-  const [specCatalog, setSpecCatalog] = useState<SpecCatalogEntry[]>([]);
-  const loadSpecCatalog = useCallback(() => {
-    api<SpecCatalogEntry[]>("/api/v1/products/specifications/catalog")
-      .then(setSpecCatalog)
-      .catch(() => {});
-  }, []);
-  useEffect(() => { loadSpecCatalog(); }, [loadSpecCatalog]);
-
   // Client-side filter on the current page when a search is active (already filtered server-side)
   const grouped = products.reduce<Map<string, ProductSummary[]>>((acc, p) => {
     const cat = p.category?.trim() || UNCATEGORIZED;
@@ -1032,8 +814,7 @@ export default function ProductsPage() {
 
   return (
     <>
-      {showCreate && <CreatePanel onClose={() => setShowCreate(false)} onCreated={load} materialNames={materialNames}
-        specCatalog={specCatalog} onSpecCatalogChange={loadSpecCatalog} />}
+      {showCreate && <CreatePanel onClose={() => setShowCreate(false)} onCreated={load} materialNames={materialNames} />}
       <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleUpload} />
 
       <div className="space-y-6">
@@ -1126,8 +907,7 @@ export default function ProductsPage() {
                   )}
                   <div className="space-y-3">
                     {groupProducts.map((p) => (
-                      <ProductCard key={p.id} product={p} onRefresh={load} materialNames={materialNames}
-                        specCatalog={specCatalog} onSpecCatalogChange={loadSpecCatalog} />
+                      <ProductCard key={p.id} product={p} onRefresh={load} materialNames={materialNames} />
                     ))}
                   </div>
                 </div>
