@@ -1,22 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Product = {
+type MaterialCost = {
+  name: string;
+  section_size: number;
+  units: string;
+  quantity: number;
+  unit_cost: number;
+  line_cost: number;
+  has_cost: boolean;
+};
+
+type ProductCost = {
   id: number;
   name: string;
   product_code: string | null;
-  description: string | null;
   category: string | null;
-  default_unit_price: number;
-  boq_count: number;
+  boq_cost: number;
+  boq_lines: number;
+  has_missing_prices: boolean;
+  material_costs: MaterialCost[];
 };
 
-type ListResponse = {
-  items: Product[];
+type PageResult = {
+  items: ProductCost[];
   total: number;
   page: number;
   page_size: number;
@@ -31,581 +42,393 @@ const inr = (n: number) =>
     maximumFractionDigits: 2,
   }).format(n);
 
-const fmtTime = (d: Date) =>
-  d.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+const PAGE_SIZE = 20;
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function TableSkeleton() {
   return (
     <div className="animate-pulse overflow-hidden rounded-xl border border-surface-border">
-      {/* thead */}
       <div className="h-11 bg-surface-card" />
-      {/* rows */}
-      {[1, 2, 3, 4, 5].map((i) => (
-        <div
-          key={i}
-          className="flex items-center gap-4 border-t border-surface-border/50 px-4 py-4"
-        >
-          <div className="h-3.5 w-40 rounded bg-slate-700" />
+      {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 border-t border-surface-border/50 px-4 py-3.5">
+          <div className="h-3 w-4 rounded bg-slate-800" />
+          <div className="h-3.5 w-48 rounded bg-slate-700" />
           <div className="h-3.5 w-20 rounded bg-slate-800" />
           <div className="h-3.5 w-24 rounded bg-slate-800" />
-          <div className="ml-auto h-8 w-32 rounded bg-slate-800" />
-          <div className="h-3.5 w-20 rounded bg-slate-800" />
-          <div className="h-8 w-16 rounded bg-slate-800" />
+          <div className="ml-auto h-3.5 w-28 rounded bg-slate-800" />
         </div>
       ))}
     </div>
   );
 }
 
-// ─── Summary Cards ────────────────────────────────────────────────────────────
+// ─── Material Breakdown Row ───────────────────────────────────────────────────
 
-function SummaryCards({
-  products,
-  lastUpdated,
-}: {
-  products: Product[];
-  lastUpdated: Date | null;
-}) {
-  const withBoq = products.filter((p) => p.boq_count > 0).length;
-  const avgPrice =
-    products.length > 0
-      ? products.reduce((a, p) => a + p.default_unit_price, 0) / products.length
-      : 0;
-
+function BreakdownRow({ product }: { product: ProductCost }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {/* Total products */}
-      <div className="rounded-xl border border-surface-border bg-surface-card px-5 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          Total Products
+    <tr className="border-b border-surface-border/30 bg-[#090d12]">
+      <td colSpan={5} className="px-8 py-3">
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          Material Cost Breakdown — {product.boq_lines} line{product.boq_lines !== 1 ? "s" : ""}
         </p>
-        <p className="mt-2 text-3xl font-semibold text-white">
-          {products.length}
-        </p>
-        <p className="mt-1 text-xs text-slate-500">in catalogue</p>
-      </div>
-
-      {/* With BOQ */}
-      <div className="rounded-xl border border-surface-border bg-surface-card px-5 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          With BOQ Lines
-        </p>
-        <p className="mt-2 text-3xl font-semibold text-white">{withBoq}</p>
-        <p className="mt-1 text-xs text-slate-500">have BOQ data</p>
-      </div>
-
-      {/* Avg price */}
-      <div className="rounded-xl border border-surface-border bg-surface-card px-5 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          Avg. Unit Price
-        </p>
-        <p className="mt-2 text-xl font-semibold text-emerald-400 font-mono">
-          {inr(avgPrice)}
-        </p>
-        <p className="mt-1 text-xs text-slate-500">across all products</p>
-      </div>
-
-      {/* Last updated */}
-      <div className="rounded-xl border border-surface-border bg-surface-card px-5 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          Last Refreshed
-        </p>
-        {lastUpdated ? (
-          <>
-            <p className="mt-2 font-mono text-base font-semibold text-accent">
-              {fmtTime(lastUpdated)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {lastUpdated.toLocaleDateString()}
-            </p>
-          </>
-        ) : (
-          <p className="mt-2 text-sm text-slate-600">—</p>
-        )}
-      </div>
-    </div>
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-slate-600">
+              <th className="pb-1 text-left font-semibold">Material</th>
+              <th className="pb-1 text-right font-semibold">Quantity</th>
+              <th className="pb-1 text-right font-semibold">Unit Cost</th>
+              <th className="pb-1 text-right font-semibold">Line Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {product.material_costs.map((m, i) => (
+              <tr key={i} className="border-t border-surface-border/20">
+                <td className="py-1 text-slate-300">
+                  {m.name}
+                  {!m.has_cost && (
+                    <span className="ml-1.5 text-[10px] text-amber-500/80">⚠ no price</span>
+                  )}
+                </td>
+                <td className="py-1 text-right font-mono text-slate-400">
+                  {m.section_size > 0
+                    ? `${m.quantity} × ${m.section_size} ${m.units}`
+                    : `${m.quantity} ${m.units}`}
+                </td>
+                <td className="py-1 text-right font-mono text-slate-400">
+                  {m.has_cost ? inr(m.unit_cost) : "—"}
+                </td>
+                <td
+                  className={`py-1 text-right font-mono font-semibold ${
+                    m.has_cost ? "text-emerald-400" : "text-slate-600"
+                  }`}
+                >
+                  {m.has_cost ? inr(m.line_cost) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-surface-border/50">
+              <td colSpan={3} className="pt-1.5 text-right font-semibold text-slate-400">
+                Total
+              </td>
+              <td className="pt-1.5 text-right font-mono font-bold text-emerald-400">
+                {inr(product.boq_cost)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </td>
+    </tr>
   );
 }
 
-// ─── Price Row ────────────────────────────────────────────────────────────────
+// ─── Pagination Controls ──────────────────────────────────────────────────────
 
-function PriceRow({
-  product,
-  draftPrice,
-  isSaving,
+function Pagination({
+  page,
+  total,
+  pageSize,
   onChange,
-  onSave,
 }: {
-  product: Product;
-  draftPrice: string | undefined;
-  isSaving: boolean;
-  onChange(val: string): void;
-  onSave(): void;
+  page: number;
+  total: number;
+  pageSize: number;
+  onChange(p: number): void;
 }) {
-  const isDirty = draftPrice !== undefined;
-  const displayVal = draftPrice ?? String(product.default_unit_price);
-  const hasBoq = product.boq_count > 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (totalPages <= 1) return null;
+
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+
+  const pageNums: number[] = [];
+  const add = (n: number) => !pageNums.includes(n) && pageNums.push(n);
+  add(1);
+  for (let i = Math.max(2, page - 2); i <= Math.min(totalPages - 1, page + 2); i++) add(i);
+  add(totalPages);
+  pageNums.sort((a, b) => a - b);
+
+  const withGaps: (number | "…")[] = [];
+  pageNums.forEach((n, i) => {
+    if (i > 0 && n - pageNums[i - 1] > 1) withGaps.push("…");
+    withGaps.push(n);
+  });
 
   return (
-    <tr
-      className={`border-b border-surface-border/50 text-sm last:border-0 transition-colors ${
-        isDirty ? "bg-accent/[0.04]" : "hover:bg-white/[0.02]"
-      }`}
-    >
-      {/* Product name */}
-      <td className="px-4 py-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="font-medium text-white">{product.name}</span>
-          {product.description && (
-            <span className="max-w-[220px] truncate text-[11px] text-slate-500">
-              {product.description}
-            </span>
-          )}
-        </div>
-      </td>
-
-      {/* Code */}
-      <td className="px-4 py-3">
-        {product.product_code ? (
-          <span className="rounded border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[11px] text-accent">
-            {product.product_code}
-          </span>
-        ) : (
-          <span className="text-slate-600">—</span>
-        )}
-      </td>
-
-      {/* Category */}
-      <td className="px-4 py-3 text-slate-400">
-        {product.category ?? <span className="text-slate-600">—</span>}
-      </td>
-
-      {/* Inline price input */}
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          <span className="shrink-0 text-xs text-slate-500">₹</span>
-          <input
-            type="number"
-            step="any"
-            min="0"
-            value={displayVal}
-            onChange={(e) => onChange(e.target.value)}
-            aria-label={`Price for ${product.name}`}
-            className={`w-32 rounded border bg-[#0f1419] px-2 py-1.5 text-sm text-white transition-colors focus:outline-none focus:ring-1 ${
-              isDirty
-                ? "border-accent/60 focus:ring-accent/30"
-                : "border-surface-border focus:border-accent focus:ring-accent/20"
-            }`}
-          />
-          {isDirty && (
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-              title="Unsaved change"
-            />
-          )}
-        </div>
-      </td>
-
-      {/* BOQ Lines */}
-      <td className="px-4 py-3">
-        {hasBoq ? (
-          <span className="text-xs text-slate-300">
-            {product.boq_count} line{product.boq_count !== 1 ? "s" : ""}
-          </span>
-        ) : (
-          <span className="text-xs text-slate-600">—</span>
-        )}
-      </td>
-
-      {/* Save action */}
-      <td className="px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-sm">
+      <span className="text-xs text-slate-500">
+        {from}–{to} of {total} products
+      </span>
+      <div className="flex items-center gap-1">
         <button
           type="button"
-          disabled={!isDirty || isSaving}
-          onClick={onSave}
-          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-            isDirty && !isSaving
-              ? "bg-accent text-white hover:bg-accent/90"
-              : "cursor-not-allowed bg-surface-border text-slate-600"
-          } disabled:opacity-60`}
+          disabled={page <= 1}
+          onClick={() => onChange(page - 1)}
+          className="rounded px-2 py-1 text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
         >
-          {isSaving ? (
-            <span className="flex items-center gap-1.5">
-              <svg
-                className="h-3 w-3 animate-spin"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8v8H4z"
-                />
-              </svg>
-              Saving
-            </span>
-          ) : isDirty ? (
-            "Save"
-          ) : (
-            "Saved"
-          )}
+          ‹
         </button>
-      </td>
-    </tr>
+        {withGaps.map((n, i) =>
+          n === "…" ? (
+            <span key={`gap-${i}`} className="px-1 text-slate-600">
+              …
+            </span>
+          ) : (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange(n as number)}
+              className={`min-w-[2rem] rounded px-2 py-1 text-xs transition-colors ${
+                n === page
+                  ? "bg-accent text-white"
+                  : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
+              }`}
+            >
+              {n}
+            </button>
+          )
+        )}
+        <button
+          type="button"
+          disabled={page >= totalPages}
+          onClick={() => onChange(page + 1)}
+          className="rounded px-2 py-1 text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          ›
+        </button>
+      </div>
+    </div>
   );
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PricingPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [items, setItems] = useState<ProductCost[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Per-row price drafts — undefined means untouched (pristine)
-  const [drafts, setDrafts] = useState<Record<number, string>>({});
-  // Per-row saving state
-  const [saving, setSaving] = useState<Record<number, boolean>>({});
-  // Per-row inline save errors
-  const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
-
-  const [search, setSearch] = useState("");
-
-  // ── Load ──────────────────────────────────────────────────────────────────
+  // Debounce search → reset to page 1 on change
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [search]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch all products across pages (pricing needs the full list)
-      const PAGE_SIZE = 500;
-      const first = await api<ListResponse>(`/api/v1/products?page=1&page_size=${PAGE_SIZE}`);
-      let all: Product[] = first.items;
-      if (first.total > PAGE_SIZE) {
-        const remaining = Math.ceil((first.total - PAGE_SIZE) / PAGE_SIZE);
-        const pages = await Promise.all(
-          Array.from({ length: remaining }, (_, i) =>
-            api<ListResponse>(`/api/v1/products?page=${i + 2}&page_size=${PAGE_SIZE}`)
-          )
-        );
-        all = all.concat(pages.flatMap((p) => p.items));
-      }
-      setProducts(all);
-      setDrafts({});
-      setRowErrors({});
-      setLastUpdated(new Date());
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(PAGE_SIZE),
+      });
+      if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
+      const data = await api<PageResult>(`/api/v1/products/costs?${params}`);
+      setItems(data.items);
+      setTotal(data.total);
+      setExpanded({});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load products");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, debouncedSearch]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // ── Save single row ───────────────────────────────────────────────────────
-
-  async function savePrice(id: number) {
-    const raw = drafts[id];
-    if (raw === undefined) return;
-
-    const parsed = parseFloat(raw);
-    if (isNaN(parsed) || parsed < 0) {
-      setRowErrors((p) => ({
-        ...p,
-        [id]: "Enter a valid non-negative number",
-      }));
-      return;
-    }
-
-    setSaving((p) => ({ ...p, [id]: true }));
-    setRowErrors((p) => {
-      const next = { ...p };
-      delete next[id];
-      return next;
-    });
-
-    try {
-      await api(`/api/v1/products/${id}`, {
-        method: "PATCH",
-        json: { default_unit_price: parsed },
-      });
-
-      // Optimistic update — sync product list
-      setProducts((p) =>
-        p.map((pr) =>
-          pr.id === id ? { ...pr, default_unit_price: parsed } : pr,
-        ),
-      );
-
-      // Clear this row's draft
-      setDrafts((p) => {
-        const next = { ...p };
-        delete next[id];
-        return next;
-      });
-
-      setLastUpdated(new Date());
-    } catch (e) {
-      setRowErrors((p) => ({
-        ...p,
-        [id]: e instanceof Error ? e.message : "Save failed",
-      }));
-    } finally {
-      setSaving((p) => {
-        const next = { ...p };
-        delete next[id];
-        return next;
-      });
-    }
-  }
-
-  // ── Derived state ─────────────────────────────────────────────────────────
-
-  const dirtyCount = Object.keys(drafts).length;
-
-  const filtered =
-    search.trim() === ""
-      ? products
-      : products.filter((p) => {
-          const q = search.toLowerCase();
-          return (
-            p.name.toLowerCase().includes(q) ||
-            (p.product_code ?? "").toLowerCase().includes(q) ||
-            (p.category ?? "").toLowerCase().includes(q)
-          );
-        });
-
-  // ── Save all dirty rows ───────────────────────────────────────────────────
-
-  async function saveAll() {
-    const ids = Object.keys(drafts).map(Number);
-    await Promise.allSettled(ids.map((id) => savePrice(id)));
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
-
   return (
-    <div className="space-y-6">
-      {/* ── Page header ── */}
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-white">Product Pricing</h1>
           <p className="mt-1 text-sm text-slate-400">
-            View and update default unit prices per product. Changes are saved
-            individually per row.
+            BOQ-computed material cost per product. Click a row to see the full material breakdown.
           </p>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* Save all dirty */}
-          {dirtyCount > 0 && (
-            <button
-              type="button"
-              onClick={saveAll}
-              className="rounded-lg bg-emerald-700/80 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
-            >
-              💾 Save all ({dirtyCount})
-            </button>
-          )}
-
-          {/* Refresh */}
-          <button
-            type="button"
-            onClick={load}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-card px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-white/[0.04] hover:text-white disabled:opacity-50"
+        <button
+          type="button"
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-card px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-white/[0.04] hover:text-white disabled:opacity-50"
+        >
+          <svg
+            className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <svg
-              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-              <path d="M8 16H3v5" />
-            </svg>
-            Refresh
-          </button>
-        </div>
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+            <path d="M8 16H3v5" />
+          </svg>
+          Refresh
+        </button>
       </div>
 
-      {/* ── Summary cards ── */}
-      {!loading && !error && (
-        <SummaryCards products={products} lastUpdated={lastUpdated} />
-      )}
-
-      {/* ── Unsaved-changes banner ── */}
-      {dirtyCount > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-accent/30 bg-accent/[0.06] px-4 py-2.5">
-          <div className="flex items-center gap-2 text-sm text-accent">
-            <span className="h-2 w-2 rounded-full bg-accent" />
-            {dirtyCount} row{dirtyCount !== 1 ? "s" : ""} with unsaved price
-            changes
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setDrafts({});
-              setRowErrors({});
-            }}
-            className="text-xs text-slate-400 transition-colors hover:text-white"
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-500">
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            className="h-3.5 w-3.5"
           >
-            Discard all
-          </button>
-        </div>
-      )}
+            <circle cx="6.5" cy="6.5" r="4" />
+            <path d="M11 11l2.5 2.5" />
+          </svg>
+        </span>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, code or category…"
+          className="w-full rounded-lg border border-surface-border bg-[#0f1419] py-2 pl-9 pr-3 text-sm text-white placeholder-slate-600 transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+        />
+      </div>
 
-      {/* ── Global error ── */}
+      {/* Error */}
       {error && (
         <div className="flex items-start gap-3 rounded-lg border border-red-900/50 bg-red-950/30 p-4">
           <span className="mt-0.5 text-red-400">⚠</span>
           <div>
-            <p className="text-sm font-medium text-red-300">
-              Failed to load products
-            </p>
+            <p className="text-sm font-medium text-red-300">Failed to load products</p>
             <p className="mt-0.5 text-xs text-red-400/80">{error}</p>
-            <button
-              type="button"
-              onClick={load}
-              className="mt-2 text-xs text-accent hover:underline"
-            >
+            <button type="button" onClick={load} className="mt-2 text-xs text-accent hover:underline">
               Try again
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Search ── */}
-      {!loading && products.length > 0 && (
-        <div className="relative max-w-sm">
-          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-500">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5"/></svg>
-          </span>
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter by name, code or category…"
-            className="w-full rounded-lg border border-surface-border bg-[#0f1419] py-2 pl-9 pr-3 text-sm text-white placeholder-slate-600 transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-          />
-        </div>
-      )}
-
-      {/* ── Table ── */}
+      {/* Table */}
       {loading ? (
         <TableSkeleton />
-      ) : products.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-surface-border py-20 text-center">
+      ) : items.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-surface-border py-16 text-center">
           <p className="text-sm text-slate-400">
-            No products found. Create products in the{" "}
-            <a href="/products" className="text-accent hover:underline">
-              Products &amp; BOQ
-            </a>{" "}
-            module.
+            {debouncedSearch
+              ? `No products match "${debouncedSearch}".`
+              : "No products found. Create products in the Products & BOQ module."}
           </p>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-surface-border py-12 text-center">
-          <p className="text-sm text-slate-400">
-            No products match{" "}
-            <span className="font-mono text-slate-300">
-              &ldquo;{search}&rdquo;
-            </span>
-            .
-          </p>
-          <button
-            type="button"
-            onClick={() => setSearch("")}
-            className="mt-2 text-xs text-accent hover:underline"
-          >
-            Clear filter
-          </button>
+          {debouncedSearch && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="mt-2 text-xs text-accent hover:underline"
+            >
+              Clear search
+            </button>
+          )}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-surface-border">
-          <table className="w-full text-left">
-            <thead className="border-b border-surface-border bg-surface-card">
-              <tr>
-                {[
-                  "Product",
-                  "Code",
-                  "Category",
-                  "Default Unit Price (₹)",
-                  "BOQ Total",
-                  "Actions",
-                ].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500"
-                  >
-                    {h}
+        <>
+          <div className="overflow-x-auto rounded-xl border border-surface-border">
+            <table className="w-full text-left">
+              <thead className="border-b border-surface-border bg-surface-card">
+                <tr>
+                  <th className="w-8" />
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Product
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <>
-                  <PriceRow
-                    key={p.id}
-                    product={p}
-                    draftPrice={drafts[p.id]}
-                    isSaving={saving[p.id] ?? false}
-                    onChange={(val) =>
-                      setDrafts((prev) => ({ ...prev, [p.id]: val }))
-                    }
-                    onSave={() => savePrice(p.id)}
-                  />
-                  {rowErrors[p.id] && (
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Code
+                  </th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Category
+                  </th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    BOQ Material Cost
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((p) => (
+                  <>
                     <tr
-                      key={`err-${p.id}`}
-                      className="border-b border-surface-border/30"
+                      key={p.id}
+                      onClick={() => p.boq_lines > 0 && setExpanded((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                      className={`border-b border-surface-border/50 text-sm transition-colors ${
+                        p.boq_lines > 0 ? "cursor-pointer hover:bg-white/[0.025]" : ""
+                      } ${expanded[p.id] ? "bg-white/[0.02]" : ""}`}
                     >
-                      <td
-                        colSpan={6}
-                        className="px-4 pb-2 pt-0 text-xs text-red-400"
-                      >
-                        ⚠ {rowErrors[p.id]}
+                      <td className="w-8 px-2 py-3 text-center text-[10px] text-slate-500">
+                        {p.boq_lines > 0 ? (expanded[p.id] ? "▼" : "▶") : ""}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-white">{p.name}</td>
+                      <td className="px-4 py-3">
+                        {p.product_code ? (
+                          <span className="rounded border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[11px] text-accent">
+                            {p.product_code}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-400">
+                        {p.category ?? <span className="text-slate-600">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {p.boq_lines > 0 ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span
+                              className={`font-mono font-semibold ${
+                                p.has_missing_prices ? "text-amber-400" : "text-emerald-400"
+                              }`}
+                            >
+                              {inr(p.boq_cost)}
+                            </span>
+                            {p.has_missing_prices && (
+                              <span className="text-[10px] text-amber-500/70">⚠ missing prices</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-600">no BOQ</span>
+                        )}
                       </td>
                     </tr>
-                  )}
-                </>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    {expanded[p.id] && p.boq_lines > 0 && (
+                      <BreakdownRow key={`bd-${p.id}`} product={p} />
+                    )}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      {/* ── Footer note ── */}
-      {!loading && products.length > 0 && (
-        <p className="text-[11px] text-slate-600">
-          💡 Prices are saved per-row via PATCH /api/v1/products/:id. BOQ Total
-          = Σ(section_size × quantity) across all lines — material-cost
-          integration requires inventory pricing data.
-        </p>
+          <Pagination
+            page={page}
+            total={total}
+            pageSize={PAGE_SIZE}
+            onChange={(p) => {
+              setPage(p);
+              setExpanded({});
+            }}
+          />
+        </>
       )}
     </div>
   );

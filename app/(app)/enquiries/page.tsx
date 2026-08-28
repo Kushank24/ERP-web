@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { useSortedData } from "@/lib/useSortedData";
+import { SortHeader } from "@/components/SortHeader";
 import { ProductCombobox, CatalogProduct } from "@/components/ProductCombobox";
 
 interface Company { id: number; name: string; }
@@ -202,7 +204,8 @@ export default function EnquiriesPage() {
   }
 
   const panelOpen = showForm || selectedId !== null;
-  const filteredRows = rows;
+  const { sorted: filteredRows, sortKey: enqSortKey, sortDir: enqSortDir, toggleSort: toggleEnqSort } =
+    useSortedData(rows, "enquiry_number" as keyof EnquiryRow);
   const hasMore = rows.length < total;
 
   return (
@@ -245,8 +248,10 @@ export default function EnquiriesPage() {
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-            <span>Enquiry #</span><span>Company</span><span>Status</span>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider">
+            <SortHeader label="Enquiry #" colKey="enquiry_number" currentKey={enqSortKey as string} currentDir={enqSortDir} onSort={k => toggleEnqSort(k as keyof EnquiryRow)} />
+            <SortHeader label="Company" colKey="company_name" currentKey={enqSortKey as string} currentDir={enqSortDir} onSort={k => toggleEnqSort(k as keyof EnquiryRow)} />
+            <SortHeader label="Status" colKey="status" currentKey={enqSortKey as string} currentDir={enqSortDir} onSort={k => toggleEnqSort(k as keyof EnquiryRow)} />
           </div>
         </div>
 

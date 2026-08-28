@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
 import { api, apiBlob } from "@/lib/api";
+import { useSortedData } from "@/lib/useSortedData";
+import { SortHeader } from "@/components/SortHeader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -487,12 +489,14 @@ export default function PurchaseOrdersPage() {
   const detailGSTAmount = detail ? ((detailSubtotal + detailExtraCosts) * detail.gst_rate) / 100 : 0;
   const detailGrandTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
 
-  const filteredRows = rows.filter((r) => {
+  const preFiltered = rows.filter((r) => {
     if (colFilters.po && !r.purchase_number.toLowerCase().includes(colFilters.po.toLowerCase())) return false;
     if (colFilters.supplier && !(r.supplier_name ?? "").toLowerCase().includes(colFilters.supplier.toLowerCase())) return false;
     if (colFilters.status && r.status !== parseInt(colFilters.status)) return false;
     return true;
   });
+  const { sorted: filteredRows, sortKey: poSortKey, sortDir: poSortDir, toggleSort: togglePOSort } =
+    useSortedData<PORow>(preFiltered, "created_at", "desc");
 
   // ── Save purchase order (create or edit) ──────────────────────────────────
   async function handleSave(e: FormEvent) {
@@ -696,11 +700,11 @@ export default function PurchaseOrdersPage() {
 
         {/* Column header bar */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto] items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-            <span>PO #</span>
-            <span>Supplier</span>
-            <span className="text-right">Amount</span>
-            <span>Status</span>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto] items-center gap-2 text-[10px] font-semibold uppercase tracking-wider">
+            <SortHeader label="PO #" colKey="purchase_number" currentKey={poSortKey as string} currentDir={poSortDir} onSort={k => togglePOSort(k as keyof PORow)} />
+            <SortHeader label="Supplier" colKey="supplier_name" currentKey={poSortKey as string} currentDir={poSortDir} onSort={k => togglePOSort(k as keyof PORow)} />
+            <SortHeader label="Amount" colKey="total_amount" currentKey={poSortKey as string} currentDir={poSortDir} onSort={k => togglePOSort(k as keyof PORow)} className="justify-end" />
+            <SortHeader label="Status" colKey="status" currentKey={poSortKey as string} currentDir={poSortDir} onSort={k => togglePOSort(k as keyof PORow)} />
           </div>
         </div>
 

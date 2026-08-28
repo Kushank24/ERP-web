@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useSortedData } from "@/lib/useSortedData";
+import { SortHeader } from "@/components/SortHeader";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Types
@@ -174,7 +176,13 @@ export default function InventoryPage() {
     load(search, 0, false);
   }, [search, load]);
 
-  const filtered = materials; // already server-filtered
+  type MaterialWithTotal = Material & { total_value: number };
+  const materialsWithTotal: MaterialWithTotal[] = materials.map(m => ({
+    ...m,
+    total_value: m.length_weight_nos * m.per_unit_cost,
+  }));
+  const { sorted: filtered, sortKey: invSortKey, sortDir: invSortDir, toggleSort: toggleInvSort } =
+    useSortedData<MaterialWithTotal>(materialsWithTotal, "name");
 
   /* ── Inline-edit handlers ────────────────────────────────────────────── */
   function startEdit(m: Material) {
@@ -467,11 +475,19 @@ export default function InventoryPage() {
             <thead className="border-b border-surface-border/80 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="w-12 px-5 py-3">#</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Qty / Weight</th>
+                <th className="px-4 py-3">
+                  <SortHeader label="Name" colKey="name" currentKey={invSortKey as string} currentDir={invSortDir} onSort={k => toggleInvSort(k as keyof MaterialWithTotal)} />
+                </th>
+                <th className="px-4 py-3">
+                  <SortHeader label="Qty / Weight" colKey="length_weight_nos" currentKey={invSortKey as string} currentDir={invSortDir} onSort={k => toggleInvSort(k as keyof MaterialWithTotal)} />
+                </th>
                 <th className="px-4 py-3">Unit</th>
-                <th className="px-4 py-3">Cost / Unit (₹)</th>
-                <th className="px-4 py-3">Total Value (₹)</th>
+                <th className="px-4 py-3">
+                  <SortHeader label="Cost / Unit (₹)" colKey="per_unit_cost" currentKey={invSortKey as string} currentDir={invSortDir} onSort={k => toggleInvSort(k as keyof MaterialWithTotal)} />
+                </th>
+                <th className="px-4 py-3">
+                  <SortHeader label="Total Value (₹)" colKey="total_value" currentKey={invSortKey as string} currentDir={invSortDir} onSort={k => toggleInvSort(k as keyof MaterialWithTotalWithTotal)} />
+                </th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>

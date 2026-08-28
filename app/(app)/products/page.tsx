@@ -118,11 +118,16 @@ function EmptyState({ onAdd }: { onAdd(): void }) {
 
 // ─── BOQ Table ────────────────────────────────────────────────────────────────
 
-function MaterialDatalist({ id, names }: { id: string; names: string[] }) {
+function MaterialSelect({ value, onChange, materials, className }: {
+  value: string; onChange: (v: string) => void;
+  materials: { id: number; name: string }[]; className?: string;
+}) {
   return (
-    <datalist id={id}>
-      {names.map((n) => <option key={n} value={n} />)}
-    </datalist>
+    <select value={value} onChange={e => onChange(e.target.value)} required
+      className={"w-full rounded border border-surface-border bg-[#0f1419] px-2 py-1.5 text-xs text-white focus:border-accent focus:outline-none " + (className ?? "")}>
+      <option value="">Select material…</option>
+      {materials.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+    </select>
   );
 }
 
@@ -257,8 +262,8 @@ function BoqTable({
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
 
-function ProductCard({ product, onRefresh, materialNames }: {
-  product: ProductSummary; onRefresh: () => void; materialNames: string[];
+function ProductCard({ product, onRefresh, materials: materialList }: {
+  product: ProductSummary; onRefresh: () => void; materials: { id: number; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [boq, setBoq] = useState<BoqLine[] | null>(null);
@@ -294,8 +299,7 @@ function ProductCard({ product, onRefresh, materialNames }: {
   }, [open, product.id, boq]);
 
   function refreshBoq() {
-    setBoq(null); // clear cache → triggers reload
-    onRefresh();
+    setBoq(null); // clear cache → triggers reload of local BOQ list only
   }
 
   function startEdit() {
@@ -469,12 +473,10 @@ function ProductCard({ product, onRefresh, materialNames }: {
           {showAdd && (
             <form onSubmit={handleAddBoq} className="rounded-lg border border-accent/20 bg-accent/5 p-4">
               <p className="mb-3 text-xs font-semibold text-accent">New BOQ Line</p>
-              <MaterialDatalist id={`boq-mat-${product.id}`} names={materialNames} />
               <div className="grid grid-cols-[1fr_78px_72px_72px] gap-2">
                 <div>
                   <label className="mb-1 block text-[10px] font-medium text-slate-400">Material Name *</label>
-                  <input type="text" required list={`boq-mat-${product.id}`} placeholder="Select or type…" value={boqName} onChange={(e) => setBoqName(e.target.value)}
-                    className="w-full rounded border border-surface-border bg-[#0f1419] px-2 py-1.5 text-xs text-white placeholder-slate-600 focus:border-accent focus:outline-none" />
+                  <MaterialSelect value={boqName} onChange={setBoqName} materials={materialList} />
                 </div>
                 <div>
                   <label className="mb-1 block text-[10px] font-medium text-slate-400">Sec. Size</label>
@@ -511,8 +513,8 @@ function ProductCard({ product, onRefresh, materialNames }: {
 
 // ─── Create Product Panel ─────────────────────────────────────────────────────
 
-function CreatePanel({ onClose, onCreated, materialNames }: {
-  onClose(): void; onCreated(): void; materialNames: string[];
+function CreatePanel({ onClose, onCreated, materials: materialList }: {
+  onClose(): void; onCreated(): void; materials: { id: number; name: string }[];
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -604,7 +606,6 @@ function CreatePanel({ onClose, onCreated, materialNames }: {
               </div>
             </div>
             <div className="border-t border-surface-border px-6 py-5">
-              <MaterialDatalist id="boq-mat-create" names={materialNames} />
               <div className="mb-4 flex items-start justify-between">
                 <div>
                   <p className="text-sm font-semibold text-white">Bill of Quantities</p>
@@ -623,8 +624,7 @@ function CreatePanel({ onClose, onCreated, materialNames }: {
                   const total = (parseFloat(line.section_size) || 0) * (parseFloat(line.quantity) || 0);
                   return (
                     <div key={line.key} className="grid grid-cols-[1fr_78px_72px_72px_72px_28px] items-center gap-2">
-                      <input type="text" list="boq-mat-create" placeholder="Select or type…" value={line.name} onChange={(e) => updateLine(line.key, "name", e.target.value)}
-                        className="min-w-0 rounded border border-surface-border bg-[#0f1419] px-2 py-1.5 text-xs text-white placeholder-slate-600 focus:border-accent focus:outline-none" />
+                      <MaterialSelect value={line.name} onChange={v => updateLine(line.key, "name", v)} materials={materialList} />
                       <input type="number" step="any" min="0" placeholder="0" value={line.section_size} onChange={(e) => updateLine(line.key, "section_size", e.target.value)}
                         className="rounded border border-surface-border bg-[#0f1419] px-2 py-1.5 text-xs text-white placeholder-slate-600 focus:border-accent focus:outline-none" />
                       <select value={line.units} onChange={(e) => updateLine(line.key, "units", e.target.value)}
@@ -755,10 +755,10 @@ export default function ProductsPage() {
       .catch(() => {});
   }, []);
 
-  const [materialNames, setMaterialNames] = useState<string[]>([]);
+  const [materialList, setMaterialList] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
-    api<{ id: number; name: string }[]>("/api/v1/materials")
-      .then((mats) => setMaterialNames(mats.map((m) => m.name)))
+    api<{ items: { id: number; name: string }[] }>("/api/v1/materials?limit=10000")
+      .then((res) => setMaterialList(res.items))
       .catch(() => {});
   }, []);
 
@@ -814,7 +814,7 @@ export default function ProductsPage() {
 
   return (
     <>
-      {showCreate && <CreatePanel onClose={() => setShowCreate(false)} onCreated={load} materialNames={materialNames} />}
+      {showCreate && <CreatePanel onClose={() => setShowCreate(false)} onCreated={load} materials={materialList} />}
       <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleUpload} />
 
       <div className="space-y-6">
@@ -907,7 +907,7 @@ export default function ProductsPage() {
                   )}
                   <div className="space-y-3">
                     {groupProducts.map((p) => (
-                      <ProductCard key={p.id} product={p} onRefresh={load} materialNames={materialNames} />
+                      <ProductCard key={p.id} product={p} onRefresh={load} materials={materialList} />
                     ))}
                   </div>
                 </div>

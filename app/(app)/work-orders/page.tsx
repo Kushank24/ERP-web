@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
 import { api, apiBlob } from "@/lib/api";
+import { useSortedData } from "@/lib/useSortedData";
+import { SortHeader } from "@/components/SortHeader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -276,7 +278,7 @@ export default function WorkOrdersPage() {
 
   // ── Load lists for selectors ──────────────────────────────────────────────
   const loadSelectors = useCallback(() => {
-    api<{ items: Product[]; total: number }>("/api/v1/products?page=1&page_size=500")
+    api<{ items: Product[]; total: number }>("/api/v1/products?page=1&page_size=10000")
       .then((data) => setAvailableProducts(data.items))
       .catch(() => {});
     api<Party[]>("/api/v1/work-orders/parties/list")
@@ -386,13 +388,15 @@ export default function WorkOrdersPage() {
     setDraftProducts((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  const filteredRows = rows.filter((r) => {
+  const preFiltered = rows.filter((r) => {
     if (colFilters.wo && !r.work_order_number.toLowerCase().includes(colFilters.wo.toLowerCase())) return false;
     if (colFilters.po && !(r.po_number ?? "").toLowerCase().includes(colFilters.po.toLowerCase())) return false;
     if (colFilters.party && !(r.party_name ?? "").toLowerCase().includes(colFilters.party.toLowerCase())) return false;
     if (colFilters.status && r.status !== colFilters.status) return false;
     return true;
   });
+  const { sorted: filteredRows, sortKey: woSortKey, sortDir: woSortDir, toggleSort: toggleWOSort } =
+    useSortedData<WORow>(preFiltered, "work_order_number");
 
   // ── Save work order (create or edit) ───────────────────────────────────────
   async function handleSave(e: FormEvent) {
@@ -635,12 +639,12 @@ export default function WorkOrdersPage() {
 
         {/* Column header bar */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_6rem] items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-            <span>WO #</span>
-            <span>PO #</span>
-            <span>Party</span>
-            <span>Status</span>
-            <span className="text-right">Delivery</span>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_6rem] items-center gap-2 text-[10px] font-semibold uppercase tracking-wider">
+            <SortHeader label="WO #" colKey="work_order_number" currentKey={woSortKey as string} currentDir={woSortDir} onSort={k => toggleWOSort(k as keyof WORow)} />
+            <SortHeader label="PO #" colKey="po_number" currentKey={woSortKey as string} currentDir={woSortDir} onSort={k => toggleWOSort(k as keyof WORow)} />
+            <SortHeader label="Party" colKey="party_name" currentKey={woSortKey as string} currentDir={woSortDir} onSort={k => toggleWOSort(k as keyof WORow)} />
+            <SortHeader label="Status" colKey="status" currentKey={woSortKey as string} currentDir={woSortDir} onSort={k => toggleWOSort(k as keyof WORow)} />
+            <SortHeader label="Delivery" colKey="delivery_date" currentKey={woSortKey as string} currentDir={woSortDir} onSort={k => toggleWOSort(k as keyof WORow)} className="justify-end" />
           </div>
         </div>
 

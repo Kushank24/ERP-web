@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
 import { api } from "@/lib/api";
+import { useSortedData } from "@/lib/useSortedData";
+import { SortHeader } from "@/components/SortHeader";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -385,6 +387,17 @@ export default function SalesOrdersPage() {
     setSaveError(null);
   }
 
+  async function handleDelete() {
+    if (!detail) return;
+    if (!confirm(`Delete sales order ${detail.invoice_number}? This cannot be undone.`)) return;
+    try {
+      await api("/api/v1/sales-orders/" + detail.id, { method: "DELETE" });
+      setSelectedId(null);
+      closeForm();
+      loadList();
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Delete failed"); }
+  }
+
   function handleCompanyNameChange(name: string) {
     setFCompanyName(name);
     const existing = companies.find((c) => c.company_name === name);
@@ -428,12 +441,14 @@ export default function SalesOrdersPage() {
   const detailGSTAmount = detail ? ((detailSubtotal + detailExtraCosts) * detail.gst_rate) / 100 : 0;
   const detailGrandTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
 
-  const filteredRows = rows.filter((r) => {
+  const preFiltered = rows.filter((r) => {
     if (colFilters.invoice && !r.invoice_number.toLowerCase().includes(colFilters.invoice.toLowerCase())) return false;
     if (colFilters.company && !(r.company_name ?? "").toLowerCase().includes(colFilters.company.toLowerCase())) return false;
     if (colFilters.status && r.status !== parseInt(colFilters.status)) return false;
     return true;
   });
+  const { sorted: filteredRows, sortKey: soSortKey, sortDir: soSortDir, toggleSort: toggleSOSort } =
+    useSortedData<SORow>(preFiltered, "sales_date", "desc");
 
   // ── Update payment status (1=Not Received, 2=Partially Received, 3=Received) ──
   async function handlePaymentUpdate(paymentStatus: number, amountOverride?: number | null) {
@@ -626,11 +641,11 @@ export default function SalesOrdersPage() {
 
         {/* Column header bar */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto] items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-            <span>Invoice #</span>
-            <span>Company</span>
-            <span className="text-right">Amount</span>
-            <span>Status</span>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto] items-center gap-2 text-[10px] font-semibold uppercase tracking-wider">
+            <SortHeader label="Invoice #" colKey="invoice_number" currentKey={soSortKey as string} currentDir={soSortDir} onSort={k => toggleSOSort(k as keyof SORow)} />
+            <SortHeader label="Company" colKey="company_name" currentKey={soSortKey as string} currentDir={soSortDir} onSort={k => toggleSOSort(k as keyof SORow)} />
+            <SortHeader label="Amount" colKey="total_amount" currentKey={soSortKey as string} currentDir={soSortDir} onSort={k => toggleSOSort(k as keyof SORow)} className="justify-end" />
+            <SortHeader label="Status" colKey="status" currentKey={soSortKey as string} currentDir={soSortDir} onSort={k => toggleSOSort(k as keyof SORow)} />
           </div>
         </div>
 
@@ -1057,6 +1072,15 @@ export default function SalesOrdersPage() {
                 >
                   Cancel
                 </button>
+                {isEditing && (
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    className="rounded-lg border border-red-500/30 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10"
+                  >
+                    Delete
+                  </button>
+                )}
                 <button
                   type="submit"
                   disabled={saving}
