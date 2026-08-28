@@ -385,6 +385,17 @@ export default function SalesOrdersPage() {
     setSaveError(null);
   }
 
+  async function handleDelete() {
+    if (!detail) return;
+    if (!confirm(`Delete sales order ${detail.invoice_number}? This cannot be undone.`)) return;
+    try {
+      await api("/api/v1/sales-orders/" + detail.id, { method: "DELETE" });
+      setSelectedId(null);
+      closeForm();
+      loadList();
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Delete failed"); }
+  }
+
   function handleCompanyNameChange(name: string) {
     setFCompanyName(name);
     const existing = companies.find((c) => c.company_name === name);
@@ -1057,6 +1068,15 @@ export default function SalesOrdersPage() {
                 >
                   Cancel
                 </button>
+                {isEditing && (
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    className="rounded-lg border border-red-500/30 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10"
+                  >
+                    Delete
+                  </button>
+                )}
                 <button
                   type="submit"
                   disabled={saving}
