@@ -1,14 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react"; // useRef kept for specsLoadedRef
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { api, apiBlob } from "@/lib/api";
 import { ProductCombobox } from "@/components/ProductCombobox";
 
-interface Company { id: number; name: string; }
+interface Company { id: number; name: string; contact_person: string | null; phone: string | null; email: string | null; }
 interface Enquiry { id: number; enquiry_number: string; }
-interface Product { id: number; name: string; default_unit_price: number; }
+interface EnquiryItemRaw { product_id: number | null; product_name: string | null; quantity: number; specifications: string | null; }
+interface EnquiryWithItems { id: number; company_id: number | null; items: EnquiryItemRaw[]; }
+interface Product { id: number; model_name: string; code: string | null; }
 interface SpecSlot { specification_id: number; spec_name: string; display_order: number; }
 interface SpecValue { specification_id: number; value: string; }
+interface PriceHistory { offer_number: string; offer_date: string; status: string; unit_price: number; quantity: number; }
 interface OfferItem {
   id?: number; product_id?: number | null; description: string;
   quantity: number; unit_price: number; total_price?: number;
@@ -23,6 +27,7 @@ interface OfferDetail extends OfferRow {
   packing_charges_pct: number; freight_charges: number; gst_pct: number; subtotal: number;
   terms_conditions: string | null; notes: string | null; sales_order_id: number | null;
   company_gstin: string | null; company_address: string | null; contact_person: string | null;
+  company_phone: string | null; company_email: string | null; kind_attn: string | null;
   follow_up_comments: string | null; follow_up_completed: boolean;
   items: OfferItem[];
 }
@@ -33,9 +38,49 @@ const BLANK_FORM = {
   company_id: "" as string | number, enquiry_id: "" as string | number,
   offer_number: "", offer_date: new Date().toISOString().slice(0, 10),
   valid_until: "", currency: "INR",
+  kind_attn: "",
   packing_charges_pct: 0, freight_charges: 0, gst_pct: 18,
-  terms_conditions: "", notes: "", items: [] as DraftItem[],
+  rates_quoted: "Ex-works",
+  transportation: "Extra to be paid by Buyer",
+  delivery_terms: "As per mutual agreement",
+  payment_terms: "As per mutual agreement",
+  hsn_code: "70199000",
+  conformity_cert: "As per International Standard: (EN-131/ANDI A-14.5)",
+  notes: "", items: [] as DraftItem[],
 };
+
+function parseTerms(raw: string | null) {
+  const m: Record<string, string> = {};
+  (raw || "").split("\n").forEach(line => {
+    const i = line.indexOf(": ");
+    if (i > 0) m[line.slice(0, i).trim()] = line.slice(i + 2).trim();
+  });
+  return {
+    rates_quoted: m["Rates Quoted above are"] || "Ex-works",
+    transportation: m["Transportation"] || "Extra to be paid by Buyer",
+    delivery_terms: m["Delivery"] || "As per mutual agreement",
+    payment_terms: m["Payment"] || "As per mutual agreement",
+    hsn_code: m["HSN Code"] || "70199000",
+    conformity_cert: m["Conformity Certificate"] || "As per International Standard: (EN-131/ANDI A-14.5)",
+  };
+}
+
+function buildTerms(f: typeof BLANK_FORM): string {
+  return [
+    `Rates Quoted above are: ${f.rates_quoted}`,
+    `Packing Charges: ${f.packing_charges_pct}%`,
+    `GST Extra: ${f.gst_pct}%`,
+    `Transportation: ${f.transportation}`,
+    `Delivery: ${f.delivery_terms}`,
+    `Payment: ${f.payment_terms}`,
+    `Freight Charges: Rs. ${Number(f.freight_charges).toFixed(2)}`,
+    `Validity of Our Offer: ${f.valid_until || "As per mutual agreement"}`,
+    `Manufactured by and Brand: E-SAFE`,
+    `Our GST No.: 08AACFE4028Q1Z5`,
+    `HSN Code: ${f.hsn_code}`,
+    `Conformity Certificate: ${f.conformity_cert}`,
+  ].join("\n");
+}
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-slate-500/20 text-slate-400 border-slate-500/30",
@@ -70,6 +115,9 @@ function ErrorAlert({ message }: { message: string }) {
 const PAGE_SIZE = 50;
 
 export default function OffersPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [rows, setRows] = useState<OfferRow[]>([]);
   const [total, setTotal] = useState(0);
   const [rowOffset, setRowOffset] = useState(0);
@@ -95,6 +143,7 @@ export default function OffersPage() {
   const [downloading, setDownloading] = useState(false);
   const [productSpecs, setProductSpecs] = useState<Record<number, SpecSlot[]>>({});
   const specsLoadedRef = useRef<Set<number>>(new Set());
+  const [priceHistory, setPriceHistory] = useState<Record<string, PriceHistory[]>>({});
 
   const fetchPage = useCallback((q: string, status: string, off: number, append: boolean) => {
     if (!append) setListLoading(true); else setLoadingMore(true);
@@ -116,6 +165,8 @@ export default function OffersPage() {
     fetchPage(searchText, filterStatus, 0, false);
   }, [fetchPage, searchText, filterStatus]);
 
+  const autoFilledRef = useRef(false);
+
   useEffect(() => {
     fetchPage("", "", 0, false);
     api<{ data: Company[]; total: number }>("/api/v1/companies?limit=2000")
@@ -123,6 +174,53 @@ export default function OffersPage() {
     api<{ data: Enquiry[]; total: number }>("/api/v1/enquiries?limit=2000")
       .then(res => setEnquiries(res.data)).catch(() => {});
   }, []);
+
+  // Auto-open form when navigated from enquiries page with ?enquiry_id=X
+  useEffect(() => {
+    if (autoFilledRef.current || listLoading) return;
+    const eid = searchParams.get("enquiry_id");
+    if (!eid) return;
+    autoFilledRef.current = true;
+    const cid = searchParams.get("company_id");
+    router.replace("/offers");
+    api<EnquiryWithItems>(`/api/v1/enquiries/${eid}`)
+      .then(enq => {
+        const draftItems = (enq.items ?? []).map(i => ({
+          product_id: i.product_id ?? null,
+          description: i.product_name || "",
+          quantity: i.quantity,
+          unit_price: 0,
+          specs: [] as SpecValue[],
+        }));
+        setForm({
+          ...BLANK_FORM,
+          offer_number: suggestOfferNumber(),
+          enquiry_id: Number(eid),
+          company_id: enq.company_id ?? (cid && cid !== "" ? Number(cid) : ""),
+          items: draftItems,
+        });
+        setIsEditing(false);
+        setSaveError(null);
+        setShowForm(true);
+        setSelectedId(null);
+        setDetail(null);
+        // Pre-load specs for products that have them
+        (enq.items ?? []).forEach(i => { if (i.product_id) loadProductSpecs(i.product_id); });
+      })
+      .catch(() => {
+        setForm({
+          ...BLANK_FORM,
+          offer_number: suggestOfferNumber(),
+          enquiry_id: Number(eid),
+          company_id: cid && cid !== "" ? Number(cid) : "",
+        });
+        setIsEditing(false);
+        setSaveError(null);
+        setShowForm(true);
+        setSelectedId(null);
+        setDetail(null);
+      });
+  }, [listLoading, searchParams, router]);
 
   // Debounce search → server
   useEffect(() => {
@@ -165,10 +263,11 @@ export default function OffersPage() {
       offer_date: detail.offer_date?.slice(0, 10) || new Date().toISOString().slice(0, 10),
       valid_until: detail.valid_until?.slice(0, 10) || "",
       currency: detail.currency,
+      kind_attn: detail.kind_attn || detail.contact_person || "",
       packing_charges_pct: Number(detail.packing_charges_pct),
       freight_charges: Number(detail.freight_charges),
       gst_pct: Number(detail.gst_pct),
-      terms_conditions: detail.terms_conditions || "",
+      ...parseTerms(detail.terms_conditions),
       notes: detail.notes || "",
       items: (detail.items ?? []).map(i => ({
         product_id: i.product_id ?? null,
@@ -194,9 +293,17 @@ export default function OffersPage() {
   function loadProductSpecs(productId: number) {
     if (specsLoadedRef.current.has(productId)) return;
     specsLoadedRef.current.add(productId);
-    api<SpecSlot[]>("/api/v1/products/" + productId + "/specifications")
+    api<SpecSlot[]>("/api/v1/catalog-products/" + productId + "/specifications")
       .then(slots => setProductSpecs(prev => ({ ...prev, [productId]: slots })))
       .catch(() => specsLoadedRef.current.delete(productId));
+  }
+
+  function loadPriceHistory(companyId: number, productId: number) {
+    const key = `${companyId}_${productId}`;
+    if (priceHistory[key]) return;
+    api<PriceHistory[]>(`/api/v1/offers/price-history?company_id=${companyId}&product_id=${productId}`)
+      .then(rows => setPriceHistory(prev => ({ ...prev, [key]: rows })))
+      .catch(() => {});
   }
 
   function handleProductSelect(idx: number, product: Product | null) {
@@ -205,12 +312,15 @@ export default function OffersPage() {
       items: f.items.map((it, i) => i === idx ? {
         ...it,
         product_id: product ? product.id : null,
-        description: product ? product.name : "",
-        unit_price: product && product.default_unit_price > 0 ? product.default_unit_price : it.unit_price,
+        description: product ? product.model_name : "",
+        unit_price: it.unit_price,
         specs: [],
       } : it),
     }));
-    if (product) loadProductSpecs(product.id);
+    if (product) {
+      loadProductSpecs(product.id);
+      if (form.company_id) loadPriceHistory(Number(form.company_id), product.id);
+    }
   }
 
   function updateSpec(idx: number, specificationId: number, value: string) {
@@ -252,10 +362,11 @@ export default function OffersPage() {
         offer_number: form.offer_number.trim(),
         offer_date: form.offer_date, valid_until: form.valid_until || null,
         currency: form.currency,
+        kind_attn: form.kind_attn || null,
         packing_charges_pct: Number(form.packing_charges_pct),
         freight_charges: Number(form.freight_charges),
         gst_pct: Number(form.gst_pct),
-        terms_conditions: form.terms_conditions || null,
+        terms_conditions: buildTerms(form),
         notes: form.notes || null,
         items: form.items.map(i => ({
           product_id: i.product_id || null,
@@ -465,11 +576,21 @@ export default function OffersPage() {
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Company</label>
-                      <select value={form.company_id} onChange={e => setForm(f => ({ ...f, company_id: e.target.value }))}
+                      <select value={form.company_id} onChange={e => {
+                        const cid = e.target.value;
+                        const co = companies.find(c => String(c.id) === cid);
+                        setForm(f => ({ ...f, company_id: cid, kind_attn: f.kind_attn || (co?.contact_person ?? "") }));
+                      }}
                         className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70">
                         <option value="">— None —</option>
                         {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Kind Attn</label>
+                      <input value={form.kind_attn} onChange={e => setForm(f => ({ ...f, kind_attn: e.target.value }))}
+                        placeholder="Contact person name"
+                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Linked Enquiry</label>
@@ -488,18 +609,21 @@ export default function OffersPage() {
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Packing (%)</label>
                       <input type="number" step="0.01" min="0" value={form.packing_charges_pct}
+                        onFocus={e => e.target.select()}
                         onChange={e => setForm(f => ({ ...f, packing_charges_pct: Number(e.target.value) }))}
                         className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Freight (₹)</label>
                       <input type="number" step="0.01" min="0" value={form.freight_charges}
+                        onFocus={e => e.target.select()}
                         onChange={e => setForm(f => ({ ...f, freight_charges: Number(e.target.value) }))}
                         className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">GST (%)</label>
                       <input type="number" step="0.01" min="0" value={form.gst_pct}
+                        onFocus={e => e.target.select()}
                         onChange={e => setForm(f => ({ ...f, gst_pct: Number(e.target.value) }))}
                         className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
                     </div>
@@ -525,6 +649,8 @@ export default function OffersPage() {
                         {form.items.map((it, idx) => {
                           const lineTotal = Number(it.quantity) * Number(it.unit_price);
                           const slots = it.product_id ? productSpecs[it.product_id] : undefined;
+                          const phKey = form.company_id && it.product_id ? `${form.company_id}_${it.product_id}` : null;
+                          const history = phKey ? priceHistory[phKey] : undefined;
                           return (
                             <div key={idx} className="rounded-lg border border-surface-border/60 bg-[#0f1419] p-2.5">
                               <div className="grid grid-cols-[1fr_5rem_7rem_auto] items-center gap-2">
@@ -533,12 +659,32 @@ export default function OffersPage() {
                                   onSelect={p => handleProductSelect(idx, p)}
                                   hasSpecs
                                 />
-                                <input type="number" min={1} value={it.quantity} onChange={e => updateItem(idx, "quantity", Number(e.target.value))}
+                                <input type="number" min={1} value={it.quantity} onFocus={e => e.target.select()} onChange={e => updateItem(idx, "quantity", Number(e.target.value))}
                                   className="rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-white outline-none hover:border-surface-border focus:border-accent/60 focus:bg-[#0b0f14]" />
-                                <input type="number" step="0.01" min={0} value={it.unit_price} onChange={e => updateItem(idx, "unit_price", Number(e.target.value))}
+                                <input type="number" step="0.01" min={0} value={it.unit_price} onFocus={e => e.target.select()} onChange={e => updateItem(idx, "unit_price", Number(e.target.value))}
                                   className="rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-white outline-none hover:border-surface-border focus:border-accent/60 focus:bg-[#0b0f14]" />
                                 <button type="button" onClick={() => removeItem(idx)} className="rounded p-1 text-slate-600 hover:text-red-400">✕</button>
                               </div>
+                              {/* Price history for this company + product */}
+                              {history && history.length > 0 && (
+                                <div className="mt-1.5 rounded border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5">
+                                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-500/70">Previously quoted to this company</p>
+                                  <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                                    {history.map((h, hi) => (
+                                      <button key={hi} type="button"
+                                        onClick={() => updateItem(idx, "unit_price", h.unit_price)}
+                                        title={`${h.offer_number} — ${h.status} — click to use`}
+                                        className="group flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-white">
+                                        <span className="font-mono font-semibold text-amber-400 group-hover:text-white">₹{Number(h.unit_price).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                                        <span className="text-slate-600">×{h.quantity}</span>
+                                        <span className="text-slate-600">{new Date(h.offer_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}</span>
+                                        <span className="text-slate-700">·</span>
+                                        <span className="text-[10px] text-slate-600">{h.status}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
 
                               <input value={it.description} onChange={e => updateItem(idx, "description", e.target.value)} placeholder="Description *"
                                 className="mt-1.5 w-full rounded border border-surface-border/50 bg-[#0b0f14] px-2 py-1.5 text-xs text-white placeholder-slate-600 outline-none focus:border-accent/60" />
@@ -577,19 +723,85 @@ export default function OffersPage() {
                 </section>
 
                 <section>
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Terms & Notes</p>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="mb-1 block text-xs text-slate-400">Terms & Conditions</label>
-                      <textarea value={form.terms_conditions} onChange={e => setForm(f => ({ ...f, terms_conditions: e.target.value }))} rows={4}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Terms & Conditions</p>
+                  <div className="overflow-hidden rounded-lg border border-surface-border">
+                    {/* Row: Rates Quoted above are */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Rates Quoted above are</span>
+                      <select value={form.rates_quoted} onChange={e => setForm(f => ({ ...f, rates_quoted: e.target.value }))}
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5">
+                        {["Ex-works", "FOR Destination", "Paid Upto Transport Godown"].map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
                     </div>
-                    <div>
-                      <label className="mb-1 block text-xs text-slate-400">Notes</label>
-                      <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                    {/* Row: Packing Charges — derived from Pricing section */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Packing Charges</span>
+                      <span className="flex-1 px-3 py-2.5 text-xs text-slate-300">{form.packing_charges_pct}%</span>
+                    </div>
+                    {/* Row: GST Extra — derived from Pricing section */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">GST Extra</span>
+                      <span className="flex-1 px-3 py-2.5 text-xs text-slate-300">{form.gst_pct}%</span>
+                    </div>
+                    {/* Row: Transportation */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Transportation</span>
+                      <select value={form.transportation} onChange={e => setForm(f => ({ ...f, transportation: e.target.value }))}
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5">
+                        {["Extra to be paid by Buyer", "Paid by E-safe Enterprises"].map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+                    {/* Row: Delivery */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Delivery</span>
+                      <input type="text" value={form.delivery_terms} onChange={e => setForm(f => ({ ...f, delivery_terms: e.target.value }))}
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5" />
+                    </div>
+                    {/* Row: Payment */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Payment</span>
+                      <input type="text" value={form.payment_terms} onChange={e => setForm(f => ({ ...f, payment_terms: e.target.value }))}
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5" />
+                    </div>
+                    {/* Row: Freight Charges — derived from Pricing section */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Freight Charges</span>
+                      <span className="flex-1 px-3 py-2.5 text-xs text-slate-300">Rs. {Number(form.freight_charges).toFixed(2)}</span>
+                    </div>
+                    {/* Row: Validity of Our Offer — derived from valid_until */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Validity of Our Offer</span>
+                      <span className="flex-1 px-3 py-2.5 text-xs text-slate-300">{form.valid_until || "As per mutual agreement"}</span>
+                    </div>
+                    {/* Fixed read-only rows */}
+                    {[
+                      { label: "Manufactured by and Brand", value: "E-SAFE" },
+                      { label: "Our GST No.", value: "08AACFE4028Q1Z5" },
+                    ].map(row => (
+                      <div key={row.label} className="flex items-center border-b border-surface-border/60">
+                        <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">{row.label}</span>
+                        <span className="flex-1 px-3 py-2.5 text-xs text-slate-500">{row.value}</span>
+                      </div>
+                    ))}
+                    {/* Row: HSN Code — editable */}
+                    <div className="flex items-center border-b border-surface-border/60">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">HSN Code</span>
+                      <input type="text" value={form.hsn_code} onChange={e => setForm(f => ({ ...f, hsn_code: e.target.value }))}
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5" />
+                    </div>
+                    {/* Row: Conformity Certificate */}
+                    <div className="flex items-center">
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Conformity Certificate</span>
+                      <input type="text" value={form.conformity_cert} onChange={e => setForm(f => ({ ...f, conformity_cert: e.target.value }))}
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5" />
                     </div>
                   </div>
+                </section>
+
+                <section>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Notes</p>
+                  <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
+                    className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
                 </section>
 
                 <div className="flex items-center justify-end gap-3 pb-1">
@@ -752,8 +964,20 @@ export default function OffersPage() {
 
                     {detail.terms_conditions && (
                       <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
-                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Terms & Conditions</p>
-                        <p className="whitespace-pre-line text-sm leading-relaxed text-slate-300">{detail.terms_conditions}</p>
+                        <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Terms & Conditions</p>
+                        <div className="overflow-hidden rounded-lg border border-surface-border/60">
+                          {detail.terms_conditions.split("\n").filter(Boolean).map((line, i) => {
+                            const sep = line.indexOf(": ");
+                            const k = sep > 0 ? line.slice(0, sep) : line;
+                            const v = sep > 0 ? line.slice(sep + 2) : "";
+                            return (
+                              <div key={i} className="flex border-b border-surface-border/40 last:border-b-0">
+                                <span className="w-44 shrink-0 border-r border-surface-border/40 bg-[#0b0f14] px-3 py-2 text-[11px] text-slate-500">{k}</span>
+                                <span className="flex-1 px-3 py-2 text-[11px] text-slate-300">{v}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                     {detail.notes && (

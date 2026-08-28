@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { ProductCombobox } from "@/components/ProductCombobox";
 
@@ -70,6 +71,8 @@ export default function EnquiriesPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [searchText, setSearchText] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const searchFirstRun = useRef(true);
+  const filterFirstRun = useRef(true);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<EnquiryDetail | null>(null);
@@ -108,14 +111,16 @@ export default function EnquiriesPage() {
       .then(res => setCompanies(res.data)).catch(() => {});
   }, []);
 
-  // Debounce search → server
+  // Debounce search → server (skip initial mount — mount effect already fetched)
   useEffect(() => {
+    if (searchFirstRun.current) { searchFirstRun.current = false; return; }
     const t = setTimeout(() => { setSearchText(searchInput); fetchPage(searchInput, filterStatus, 0, false); }, 350);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // Status filter → server
+  // Status filter → server (skip initial mount)
   useEffect(() => {
+    if (filterFirstRun.current) { filterFirstRun.current = false; return; }
     fetchPage(searchText, filterStatus, 0, false);
   }, [filterStatus]);
 
@@ -172,7 +177,7 @@ export default function EnquiriesPage() {
         company_id: form.company_id ? Number(form.company_id) : null,
         enquiry_date: form.enquiry_date, status: form.status, priority: form.priority,
         notes: form.notes || null, reference_number: form.reference_number || null,
-        items: form.items.map(i => ({ product_name: i.product_name || null, quantity: Number(i.quantity), specifications: i.specifications || null })),
+        items: form.items.map(i => ({ product_id: i.product_id || null, product_name: i.product_name || null, quantity: Number(i.quantity), specifications: i.specifications || null })),
       };
       let saved: EnquiryDetail;
       if (isEditing && selectedId) {
@@ -393,7 +398,7 @@ export default function EnquiriesPage() {
                             items: f.items.map((x, i) => i === idx ? {
                               ...x,
                               product_id: p ? p.id : null,
-                              product_name: p ? p.name : "",
+                              product_name: p ? p.model_name : "",
                             } : x),
                           }))}
                         />
@@ -453,6 +458,11 @@ export default function EnquiriesPage() {
                           className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white">
                           Edit
                         </button>
+                        <Link
+                          href={`/offers?enquiry_id=${detail.id}&company_id=${detail.company_id ?? ""}`}
+                          className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20">
+                          Create Offer
+                        </Link>
                       </div>
                     </div>
 
