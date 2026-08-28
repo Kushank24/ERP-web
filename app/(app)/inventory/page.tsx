@@ -486,7 +486,7 @@ export default function InventoryPage() {
                   <SortHeader label="Cost / Unit (₹)" colKey="per_unit_cost" currentKey={invSortKey as string} currentDir={invSortDir} onSort={k => toggleInvSort(k as keyof MaterialWithTotal)} />
                 </th>
                 <th className="px-4 py-3">
-                  <SortHeader label="Total Value (₹)" colKey="total_value" currentKey={invSortKey as string} currentDir={invSortDir} onSort={k => toggleInvSort(k as keyof MaterialWithTotalWithTotal)} />
+                  <SortHeader label="Total Value (₹)" colKey="total_value" currentKey={invSortKey as string} currentDir={invSortDir} onSort={k => toggleInvSort(k as keyof MaterialWithTotal)} />
                 </th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
