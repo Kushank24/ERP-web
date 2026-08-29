@@ -27,6 +27,7 @@ const MODULE_PERMISSIONS: Record<string, Role[]> = {
   pricing:         ["admin"],
   work_orders:     ["admin", "manager", "operator"],
   finished_goods:  ["admin", "manager", "operator"],
+  email_campaigns: ["admin"],
   settings:        ["admin"],
 };
 

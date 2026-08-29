@@ -91,6 +91,36 @@ export async function api<T>(
 }
 
 /**
+ * Like api() but sends a FormData body — use for file upload endpoints.
+ * Does NOT set Content-Type (browser sets it with the multipart boundary).
+ */
+export async function apiFormData<T>(
+  path: string,
+  formData: FormData,
+  method: "POST" | "PUT" | "PATCH" = "POST",
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = await getSupabaseAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${API}${path}`, { method, headers, body: formData });
+
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const err = await res.json();
+      detail = Array.isArray(err.detail)
+        ? err.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join("; ")
+        : (err.detail ?? JSON.stringify(err));
+    } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+/**
  * Like api() but returns the raw Response Blob — use for binary endpoints
  * (PDFs, CSVs, etc.) where the body is not JSON.
  */
