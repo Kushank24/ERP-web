@@ -294,8 +294,8 @@ export default function PurchaseOrdersPage() {
     api<Supplier[]>("/api/v1/purchase-orders/suppliers/list")
       .then(setSuppliers)
       .catch(console.error);
-    api<Material[]>("/api/v1/materials")
-      .then(setMaterials)
+    api<{ items: Material[] }>("/api/v1/materials?limit=10000")
+      .then((r) => setMaterials(r.items))
       .catch(console.error);
   }, []);
   const loadList = useCallback(() => {
