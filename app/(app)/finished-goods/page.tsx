@@ -193,6 +193,52 @@ export default function FinishedGoodsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [searchText, setSearchText] = useState("");
 
+  // ── Return to inventory modal ───────────────────────────────────────────────
+  const [returnTarget, setReturnTarget] = useState<FGRow | null>(null);
+  const [rvQty, setRvQty] = useState("");
+  const [rvMatName, setRvMatName] = useState("");
+  const [rvUnit, setRvUnit] = useState("Nos");
+  const [rvCost, setRvCost] = useState("0");
+  const [rvNotes, setRvNotes] = useState("");
+  const [returning, setReturning] = useState(false);
+  const [returnError, setReturnError] = useState<string | null>(null);
+
+  function openReturn(row: FGRow) {
+    setReturnTarget(row);
+    setRvQty("");
+    setRvMatName(row.product_name);
+    setRvUnit("Nos");
+    setRvCost("0");
+    setRvNotes("");
+    setReturnError(null);
+  }
+  function closeReturn() { setReturnTarget(null); }
+
+  async function handleReturn(e: FormEvent) {
+    e.preventDefault();
+    if (!returnTarget) return;
+    setReturning(true);
+    setReturnError(null);
+    try {
+      await api(`/api/v1/finished-goods/${returnTarget.id}/return-to-inventory`, {
+        method: "POST",
+        json: {
+          quantity: parseFloat(rvQty),
+          material_name: rvMatName.trim() || null,
+          unit: rvUnit.trim() || "Nos",
+          per_unit_cost: parseFloat(rvCost) || 0,
+          notes: rvNotes.trim() || null,
+        },
+      });
+      loadData();
+      closeReturn();
+    } catch (e) {
+      setReturnError(e instanceof Error ? e.message : "Failed to return to inventory.");
+    } finally {
+      setReturning(false);
+    }
+  }
+
   // ── Work order options ──────────────────────────────────────────────────────
   const [woOptions, setWoOptions] = useState<WOOption[]>([]);
 
@@ -665,6 +711,9 @@ export default function FinishedGoodsPage() {
                 <th className="px-4 py-3 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Production Cost
                 </th>
+                <th className="px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Actions
+                </th>
               </tr>
             </thead>
 
@@ -700,12 +749,13 @@ export default function FinishedGoodsPage() {
                     <td className="px-4 py-3">
                       <Skeleton className="ml-auto h-3.5 w-20" />
                     </td>
+                    <td className="px-4 py-3" />
                   </tr>
                 ))
               ) : rows.length === 0 && !loadError ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-16 text-center text-sm text-slate-600"
                   >
                     No finished goods records found.
@@ -782,6 +832,19 @@ export default function FinishedGoodsPage() {
                       <td className="px-4 py-3 text-right font-mono text-xs text-slate-300">
                         {fmtCurrency(row.production_cost)}
                       </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3">
+                        {row.quantity_in_stock > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => openReturn(row)}
+                            className="whitespace-nowrap rounded border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[10px] font-semibold text-blue-400 transition hover:border-blue-400 hover:bg-blue-500/20 hover:text-blue-300"
+                          >
+                            → Inventory
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })
@@ -790,6 +853,125 @@ export default function FinishedGoodsPage() {
           </table>
         </div>
       </div>
+
+      {/* ── Return to Inventory modal ─────────────────────────────────────── */}
+      {returnTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-surface-border bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Return to Inventory</h2>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  From: <span className="text-slate-300">{returnTarget.product_name}</span>
+                  {" "}· Available: <span className="font-semibold text-emerald-400">{returnTarget.quantity_in_stock}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeReturn}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleReturn} className="space-y-4 px-6 py-5">
+              {returnError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-400">
+                  ⚠ {returnError}
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">
+                  Quantity to return <span className="text-red-400">*</span>
+                  <span className="ml-1 text-slate-600">(max {returnTarget.quantity_in_stock})</span>
+                </label>
+                <input
+                  type="number" step="any" min="0.001"
+                  max={returnTarget.quantity_in_stock}
+                  required autoFocus
+                  value={rvQty}
+                  onChange={e => setRvQty(e.target.value)}
+                  className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
+                  placeholder={`0 – ${returnTarget.quantity_in_stock}`}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">
+                  Material name in inventory <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text" required
+                  value={rvMatName}
+                  onChange={e => setRvMatName(e.target.value)}
+                  className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
+                  placeholder="Matches existing or creates new"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-400">Unit</label>
+                  <input
+                    type="text"
+                    value={rvUnit}
+                    onChange={e => setRvUnit(e.target.value)}
+                    className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
+                    placeholder="Nos"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-400">Cost per unit</label>
+                  <input
+                    type="number" step="any" min="0"
+                    value={rvCost}
+                    onChange={e => setRvCost(e.target.value)}
+                    className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-400">Notes</label>
+                <textarea
+                  rows={2}
+                  value={rvNotes}
+                  onChange={e => setRvNotes(e.target.value)}
+                  className="w-full resize-none rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
+                  placeholder="Optional — reason or batch info"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={closeReturn}
+                  className="rounded-lg border border-surface-border px-4 py-2 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={returning || !rvQty || !rvMatName.trim()}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {returning ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      Returning…
+                    </>
+                  ) : (
+                    "Return → Inventory"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
