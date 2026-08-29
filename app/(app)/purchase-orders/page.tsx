@@ -649,7 +649,7 @@ export default function PurchaseOrdersPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={loadList}
+              onClick={() => loadList()}
               disabled={listLoading}
               title="Refresh list"
               className="flex items-center gap-1.5 rounded-lg border border-surface-border px-3 py-1.5 text-[11px] text-slate-400 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
