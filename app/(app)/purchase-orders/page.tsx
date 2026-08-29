@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, FormEvent } from "react";
+import { useState, useEffect, useCallback, useRef, FormEvent } from "react";
 import { api, apiBlob } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
+import { MaterialCombobox } from "@/components/MaterialCombobox";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -233,7 +234,8 @@ export default function PurchaseOrdersPage() {
   const [rows, setRows] = useState<PORow[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const [colFilters, setColFilters] = useState({ po: "", supplier: "", status: "" });
+  const [searchInput, setSearchInput] = useState("");
+  const [searchText, setSearchText] = useState("");
 
   // ── Detail state ───────────────────────────────────────────────────────────
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -298,24 +300,29 @@ export default function PurchaseOrdersPage() {
       .then((r) => setMaterials(r.items))
       .catch(console.error);
   }, []);
-  const loadList = useCallback(() => {
+  const loadList = useCallback((q = searchText) => {
     setListLoading(true);
     setListError(null);
-    api<PORow[]>("/api/v1/purchase-orders")
-      .then((data) => {
-        setRows(data);
-        setListLoading(false);
-      })
-      .catch((e: Error) => {
-        setListError(e.message ?? "Failed to load purchase orders");
-        setListLoading(false);
-      });
+    const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+    api<PORow[]>(`/api/v1/purchase-orders${qs}`)
+      .then((data) => { setRows(data); setListLoading(false); })
+      .catch((e: Error) => { setListError(e.message ?? "Failed to load purchase orders"); setListLoading(false); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => { loadList(""); loadDropdowns(); }, [loadList, loadDropdowns]);
+
+  // Debounce search → refetch
+  const poDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    loadList();
-    loadDropdowns();
-  }, [loadList, loadDropdowns]);
+    if (poDebounceRef.current) clearTimeout(poDebounceRef.current);
+    poDebounceRef.current = setTimeout(() => {
+      setSearchText(searchInput);
+      loadList(searchInput);
+    }, 350);
+    return () => { if (poDebounceRef.current) clearTimeout(poDebounceRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
 
   // ── Load PO detail ─────────────────────────────────────────────────────────
   const loadDetail = useCallback((id: number) => {
@@ -489,14 +496,8 @@ export default function PurchaseOrdersPage() {
   const detailGSTAmount = detail ? ((detailSubtotal + detailExtraCosts) * detail.gst_rate) / 100 : 0;
   const detailGrandTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
 
-  const preFiltered = rows.filter((r) => {
-    if (colFilters.po && !r.purchase_number.toLowerCase().includes(colFilters.po.toLowerCase())) return false;
-    if (colFilters.supplier && !(r.supplier_name ?? "").toLowerCase().includes(colFilters.supplier.toLowerCase())) return false;
-    if (colFilters.status && r.status !== parseInt(colFilters.status)) return false;
-    return true;
-  });
   const { sorted: filteredRows, sortKey: poSortKey, sortDir: poSortDir, toggleSort: togglePOSort } =
-    useSortedData<PORow>(preFiltered, "created_at", "desc");
+    useSortedData<PORow>(rows, "created_at", "desc");
 
   // ── Save purchase order (create or edit) ──────────────────────────────────
   async function handleSave(e: FormEvent) {
@@ -642,13 +643,13 @@ export default function PurchaseOrdersPage() {
             <p className="text-[11px] text-slate-500">
               {listLoading
                 ? "Loading…"
-                : `${filteredRows.length}${filteredRows.length !== rows.length ? ` of ${rows.length}` : ""} order${filteredRows.length !== 1 ? "s" : ""}`}
+                : `${filteredRows.length} order${filteredRows.length !== 1 ? "s" : ""}`}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={loadList}
+              onClick={() => loadList()}
               disabled={listLoading}
               title="Refresh list"
               className="flex items-center gap-1.5 rounded-lg border border-surface-border px-3 py-1.5 text-[11px] text-slate-400 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
@@ -677,24 +678,15 @@ export default function PurchaseOrdersPage() {
           </div>
         )}
 
-        {/* Column filters */}
+        {/* Search filter */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-1.5">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto] items-center gap-2">
-            <input type="search" value={colFilters.po} placeholder="PO #…"
-              onChange={e => setColFilters(p => ({ ...p, po: e.target.value }))}
-              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
-            <input type="search" value={colFilters.supplier} placeholder="Supplier…"
-              onChange={e => setColFilters(p => ({ ...p, supplier: e.target.value }))}
-              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
-            <div />
-            <select value={colFilters.status}
-              onChange={e => setColFilters(p => ({ ...p, status: e.target.value }))}
-              className="rounded border border-surface-border/60 bg-[#0b0f14] px-1.5 py-1 text-[11px] text-slate-300 outline-none transition focus:border-accent/50">
-              <option value="">All</option>
-              {Object.entries(STATUS_MAP).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
-              ))}
-            </select>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-slate-500">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3 w-3"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5"/></svg>
+            </span>
+            <input type="search" value={searchInput} placeholder="Search PO #, supplier…"
+              onChange={e => setSearchInput(e.target.value)}
+              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
           </div>
         </div>
 
@@ -727,7 +719,7 @@ export default function PurchaseOrdersPage() {
             </div>
           ) : filteredRows.length === 0 && !listError ? (
             <div className="flex h-40 items-center justify-center text-sm text-slate-600">
-              {(colFilters.po || colFilters.supplier || colFilters.status) ? "No orders match the active filters." : "No purchase orders found."}
+              {searchInput ? "No orders match the search." : "No purchase orders found."}
             </div>
           ) : (
             <ul>
@@ -1026,20 +1018,14 @@ export default function PurchaseOrdersPage() {
                         className="grid grid-cols-[2fr_1fr_1fr_1fr_1.4fr_1.4fr_auto] items-center gap-2 rounded-lg border border-surface-border/60 bg-[#0f1419] p-2.5"
                       >
                         {/* Material name */}
-                        <input
-                          list={`materials-datalist-${idx}`}
+                        <MaterialCombobox
                           required
                           value={line.material_name}
-                          onChange={(e) => handleMaterialNameChange(idx, e.target.value)}
+                          onChange={(name) => handleMaterialNameChange(idx, name)}
+                          materials={materials}
                           placeholder="MS Pipe 2 inch"
                           className="w-full rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-white placeholder-slate-600 outline-none transition hover:border-surface-border focus:border-accent/60 focus:bg-[#0b0f14]"
-                          autoComplete="off"
                         />
-                        <datalist id={`materials-datalist-${idx}`}>
-                          {materials.map((m) => (
-                            <option key={m.id} value={m.name} />
-                          ))}
-                        </datalist>
                         {/* Qty / weight / nos */}
                         <input
                           type="number"
