@@ -16,6 +16,7 @@ type Campaign = {
   total_recipients: number;
   sent_count: number;
   failed_count: number;
+  error_message: string | null;
   created_at: string;
   completed_at: string | null;
 };
@@ -468,7 +469,14 @@ export default function EmailCampaignsPage() {
               ) : (
                 campaigns.map(c => (
                   <tr key={c.id} className="border-b border-surface-border/40 last:border-b-0 hover:bg-white/[0.02]">
-                    <td className="max-w-[12rem] truncate px-4 py-3 text-sm font-medium text-white" title={c.subject}>{c.subject}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-white">
+                      <p className="max-w-[12rem] truncate" title={c.subject}>{c.subject}</p>
+                      {c.status === "failed" && c.error_message && (
+                        <p className="mt-0.5 max-w-[16rem] truncate text-[10px] text-red-400" title={c.error_message}>
+                          ⚠ {c.error_message}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                     <td className="px-4 py-3 font-mono text-xs text-emerald-400">{c.sent_count}</td>
                     <td className="px-4 py-3 font-mono text-xs text-red-400">{c.failed_count}</td>
