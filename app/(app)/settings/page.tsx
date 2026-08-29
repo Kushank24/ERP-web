@@ -23,7 +23,7 @@ const MODULE_PERMISSIONS: Record<string, Role[]> = {
   purchase_orders: ["admin", "manager"],
   sales_orders:    ["admin", "manager"],
   inventory:       ["admin", "manager", "operator"],
-  products_boq:    ["admin", "manager"],
+  products_boq:    ["admin", "manager", "operator"],
   pricing:         ["admin"],
   work_orders:     ["admin", "manager", "operator"],
   finished_goods:  ["admin", "manager", "operator"],
