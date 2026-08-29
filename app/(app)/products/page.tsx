@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, apiBlob } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -298,6 +298,20 @@ function ProductCard({ product, onRefresh, materials: materialList }: {
       .finally(() => setBoqLoading(false));
   }, [open, product.id, boq]);
 
+  async function downloadBoq() {
+    try {
+      const { blob, filename } = await apiBlob(`/api/v1/products/${product.id}/boq/download`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || `BOQ_${product.name}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently ignore — user will see no download
+    }
+  }
+
   function refreshBoq() {
     setBoq(null); // clear cache → triggers reload of local BOQ list only
   }
@@ -448,10 +462,21 @@ function ProductCard({ product, onRefresh, materials: materialList }: {
         <div className="space-y-5 border-t border-surface-border px-5 py-5">
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Bill of Quantities</p>
-            <button type="button" onClick={() => { setShowAdd((v) => !v); setBoqErr(null); }}
-              className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/20">
-              {showAdd ? "Cancel" : "+ Add BOQ Line"}
-            </button>
+            <div className="flex items-center gap-2">
+              {boqCount > 0 && (
+                <button type="button" onClick={downloadBoq} title="Download BOQ as Excel"
+                  className="flex items-center gap-1.5 rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-1 text-[11px] font-medium text-emerald-400 transition-colors hover:bg-emerald-900/40">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                    <path d="M8 2v8M5 7l3 3 3-3M3 13h10" />
+                  </svg>
+                  Download
+                </button>
+              )}
+              <button type="button" onClick={() => { setShowAdd((v) => !v); setBoqErr(null); }}
+                className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/20">
+                {showAdd ? "Cancel" : "+ Add BOQ Line"}
+              </button>
+            </div>
           </div>
 
           {boqLoading ? (
