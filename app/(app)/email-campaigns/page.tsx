@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, FormEvent, ChangeEvent } from "react";
-import { api, apiFormData } from "@/lib/api";
+import { api, apiFormData, API } from "@/lib/api";
 import { RichTextEditor } from "@/components/RichTextEditor";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -218,7 +218,9 @@ export default function EmailCampaignsPage() {
       "/api/v1/email-campaigns/upload-image",
       formData,
     );
-    return data.url;
+    // data.url is a relative path; prepend the backend base so the browser
+    // can display the image in the editor preview
+    return `${API.replace(/\/$/, "")}${data.url}`;
   }
 
   async function handleDeleteCampaign(id: number) {
