@@ -121,6 +121,7 @@ const NAV_GROUPS: { label: string; keys: string[] }[] = [
   { label: "Procurement", keys: ["purchase_orders"] },
   { label: "Production", keys: ["work_orders", "products_boq", "inventory", "finished_goods"] },
   { label: "Sales", keys: ["sales_orders", "pricing"] },
+  { label: "Marketing", keys: ["email_campaigns"] },
   { label: "System", keys: ["settings"] },
 ];
 

@@ -11,6 +11,14 @@
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.0",
+    "@tiptap/extension-image": "^3.30.5",
+    "@tiptap/extension-link": "^3.30.5",
+    "@tiptap/extension-placeholder": "^3.30.5",
+    "@tiptap/extension-text-align": "^3.30.5",
+    "@tiptap/extension-underline": "^3.30.5",
+    "@tiptap/pm": "^3.30.5",
+    "@tiptap/react": "^3.30.5",
+    "@tiptap/starter-kit": "^3.30.5",
     "next": "14.2.18",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

@@ -11,5 +11,6 @@ export const MODULE_NAV: Record<string, { href: string; label: string }> = {
   pricing: { href: "/pricing", label: "Product Pricing" },
   work_orders: { href: "/work-orders", label: "Work Orders" },
   finished_goods: { href: "/finished-goods", label: "Finished Goods" },
+  email_campaigns: { href: "/email-campaigns", label: "Email Campaigns" },
   settings: { href: "/settings", label: "System Settings" },
 };
