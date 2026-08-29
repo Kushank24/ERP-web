@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, FormEvent } from "react";
+import { useState, useEffect, useCallback, useRef, FormEvent } from "react";
 import { api } from "@/lib/api";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,6 +190,8 @@ export default function FinishedGoodsPage() {
   const [rows, setRows] = useState<FGRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchText, setSearchText] = useState("");
 
   // ── Work order options ──────────────────────────────────────────────────────
   const [woOptions, setWoOptions] = useState<WOOption[]>([]);
@@ -215,22 +217,13 @@ export default function FinishedGoodsPage() {
   const [fNotes, setFNotes] = useState("");
 
   // ── Load finished goods ─────────────────────────────────────────────────────
-  const loadData = useCallback(() => {
+  const loadData = useCallback((q = searchText) => {
     setLoading(true);
     setLoadError(null);
-    api<FGRow[]>("/api/v1/finished-goods")
+    const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+    api<FGRow[]>(`/api/v1/finished-goods${qs}`)
       .then((data) => {
-        // Sort by completion_date descending (most recent first)
-        const sorted = [...data].sort((a, b) => {
-          const da = a.completion_date
-            ? new Date(a.completion_date).getTime()
-            : 0;
-          const db = b.completion_date
-            ? new Date(b.completion_date).getTime()
-            : 0;
-          return db - da;
-        });
-        setRows(sorted);
+        setRows(data);
         setLoading(false);
       })
       .catch((e: Error) => {
@@ -248,10 +241,19 @@ export default function FinishedGoodsPage() {
       });
   }, []);
 
+  useEffect(() => { loadData(""); loadWOs(); }, [loadData, loadWOs]);
+
+  // Debounce search → refetch
+  const fgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    loadData();
-    loadWOs();
-  }, [loadData, loadWOs]);
+    if (fgDebounceRef.current) clearTimeout(fgDebounceRef.current);
+    fgDebounceRef.current = setTimeout(() => {
+      setSearchText(searchInput);
+      loadData(searchInput);
+    }, 350);
+    return () => { if (fgDebounceRef.current) clearTimeout(fgDebounceRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
 
   // ── When WO selected, auto-fill WO number and party name ───────────────────
   function handleWOSelect(woId: string) {
@@ -613,22 +615,25 @@ export default function FinishedGoodsPage() {
       ══════════════════════════════════════════════════════════════════════ */}
       <div className="overflow-hidden rounded-xl border border-surface-border">
         {/* Table header */}
-        <div className="flex items-center justify-between border-b border-surface-border bg-surface-card px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-border bg-surface-card px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-white">
-              Stock Inventory
-            </h2>
+            <h2 className="text-sm font-semibold text-white">Stock Inventory</h2>
             {!loading && (
               <p className="text-[11px] text-slate-500">
-                {rows.length} record{rows.length !== 1 ? "s" : ""} · sorted by
-                completion date
+                {rows.length} record{rows.length !== 1 ? "s" : ""} · sorted by completion date
                 {lowStockCount > 0 && (
-                  <span className="ml-2 text-yellow-400">
-                    · {lowStockCount} low stock
-                  </span>
+                  <span className="ml-2 text-yellow-400">· {lowStockCount} low stock</span>
                 )}
               </p>
             )}
+          </div>
+          <div className="relative min-w-[200px]">
+            <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-slate-500">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3 w-3"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5"/></svg>
+            </span>
+            <input type="search" value={searchInput} placeholder="Search product, WO #, party…"
+              onChange={e => setSearchInput(e.target.value)}
+              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
           </div>
         </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, FormEvent } from "react";
+import { useState, useEffect, useCallback, useRef, FormEvent } from "react";
 import { api, apiBlob } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
@@ -208,9 +208,14 @@ function fmtDate(d: string | null | undefined): string {
 export default function WorkOrdersPage() {
   // ── List state ──────────────────────────────────────────────────────────────
   const [rows, setRows] = useState<WORow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [rowOffset, setRowOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const [colFilters, setColFilters] = useState({ wo: "", po: "", party: "", status: "" });
+  const [searchInput, setSearchInput] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   // ── Detail state ────────────────────────────────────────────────────────────
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -261,20 +266,29 @@ export default function WorkOrdersPage() {
     { ...BLANK_DRAFT_PRODUCT },
   ]);
 
-  // ── Load work order list ────────────────────────────────────────────────────
-  const loadList = useCallback(() => {
-    setListLoading(true);
+  // ── Load work order list (same fetchPage pattern as Enquiries) ─────────────
+  const fetchPage = useCallback((q: string, status: string, off: number, append: boolean) => {
+    if (append) setLoadingMore(true); else setListLoading(true);
     setListError(null);
-    api<WORow[]>("/api/v1/work-orders")
-      .then((data) => {
-        setRows(data);
-        setListLoading(false);
+    const params = new URLSearchParams({ limit: "50", offset: String(off) });
+    if (q.trim()) params.set("q", q.trim());
+    if (status) params.set("status", status);
+    api<{ data: WORow[]; total: number }>(`/api/v1/work-orders?${params}`)
+      .then(({ data, total: t }) => {
+        setRows(prev => append ? [...prev, ...data] : data);
+        setTotal(t);
+        setRowOffset(off + data.length);
+        if (append) setLoadingMore(false); else setListLoading(false);
       })
       .catch((e: Error) => {
         setListError(e.message ?? "Failed to load work orders");
-        setListLoading(false);
+        if (append) setLoadingMore(false); else setListLoading(false);
       });
   }, []);
+
+  const loadList = useCallback(() => {
+    fetchPage(searchText, statusFilter, 0, false);
+  }, [fetchPage, searchText, statusFilter]);
 
   // ── Load lists for selectors ──────────────────────────────────────────────
   const loadSelectors = useCallback(() => {
@@ -286,10 +300,19 @@ export default function WorkOrdersPage() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => { fetchPage("", "", 0, false); loadSelectors(); }, [fetchPage, loadSelectors]);
+
+  // Debounce search → refetch from offset 0
+  const woDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    loadList();
-    loadSelectors();
-  }, [loadList, loadSelectors]);
+    if (woDebounceRef.current) clearTimeout(woDebounceRef.current);
+    woDebounceRef.current = setTimeout(() => {
+      setSearchText(searchInput);
+      fetchPage(searchInput, statusFilter, 0, false);
+    }, 350);
+    return () => { if (woDebounceRef.current) clearTimeout(woDebounceRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput, statusFilter]);
 
   // ── Load work order detail ──────────────────────────────────────────────────
   const loadDetail = useCallback((id: number) => {
@@ -388,15 +411,8 @@ export default function WorkOrdersPage() {
     setDraftProducts((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  const preFiltered = rows.filter((r) => {
-    if (colFilters.wo && !r.work_order_number.toLowerCase().includes(colFilters.wo.toLowerCase())) return false;
-    if (colFilters.po && !(r.po_number ?? "").toLowerCase().includes(colFilters.po.toLowerCase())) return false;
-    if (colFilters.party && !(r.party_name ?? "").toLowerCase().includes(colFilters.party.toLowerCase())) return false;
-    if (colFilters.status && r.status !== colFilters.status) return false;
-    return true;
-  });
   const { sorted: filteredRows, sortKey: woSortKey, sortDir: woSortDir, toggleSort: toggleWOSort } =
-    useSortedData<WORow>(preFiltered, "work_order_number");
+    useSortedData<WORow>(rows, "work_order_number");
 
   // ── Save work order (create or edit) ───────────────────────────────────────
   async function handleSave(e: FormEvent) {
@@ -579,7 +595,7 @@ export default function WorkOrdersPage() {
             <p className="text-[11px] text-slate-500">
               {listLoading
                 ? "Loading…"
-                : `${filteredRows.length}${filteredRows.length !== rows.length ? ` of ${rows.length}` : ""} order${filteredRows.length !== 1 ? "s" : ""}`}
+                : `${rows.length} of ${total} order${total !== 1 ? "s" : ""}`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -614,26 +630,24 @@ export default function WorkOrdersPage() {
           </div>
         )}
 
-        {/* Column filters */}
+        {/* Search + status filter */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-1.5">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_6rem] items-center gap-2">
-            <input type="search" value={colFilters.wo} placeholder="WO #…"
-              onChange={e => setColFilters(p => ({ ...p, wo: e.target.value }))}
-              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
-            <input type="search" value={colFilters.po} placeholder="PO #…"
-              onChange={e => setColFilters(p => ({ ...p, po: e.target.value }))}
-              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
-            <input type="search" value={colFilters.party} placeholder="Party…"
-              onChange={e => setColFilters(p => ({ ...p, party: e.target.value }))}
-              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
-            <select value={colFilters.status}
-              onChange={e => setColFilters(p => ({ ...p, status: e.target.value }))}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-slate-500">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3 w-3"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5"/></svg>
+              </span>
+              <input type="search" value={searchInput} placeholder="Search WO #, PO #, party…"
+                onChange={e => setSearchInput(e.target.value)}
+                className="w-full rounded border border-surface-border/60 bg-[#0b0f14] py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
+            </div>
+            <select value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
               className="rounded border border-surface-border/60 bg-[#0b0f14] px-1.5 py-1 text-[11px] text-slate-300 outline-none transition focus:border-accent/50">
-              <option value="">All</option>
+              <option value="">All statuses</option>
               <option value="in-progress">In Progress</option>
               <option value="completed">Completed</option>
             </select>
-            <div />
           </div>
         </div>
 
@@ -667,9 +681,10 @@ export default function WorkOrdersPage() {
             </div>
           ) : filteredRows.length === 0 && !listError ? (
             <div className="flex h-40 items-center justify-center text-sm text-slate-600">
-              {(colFilters.wo || colFilters.po || colFilters.party || colFilters.status) ? "No orders match the active filters." : "No work orders found."}
+              {(searchInput || statusFilter) ? "No orders match the search." : "No work orders found."}
             </div>
           ) : (
+            <>
             <ul>
               {filteredRows.map((row) => {
                 const isActive = row.id === selectedId;
@@ -708,6 +723,15 @@ export default function WorkOrdersPage() {
                 );
               })}
             </ul>
+            {rows.length < total && (
+              <div className="border-t border-surface-border/30 p-3">
+                <button type="button" onClick={() => fetchPage(searchText, statusFilter, rowOffset, true)} disabled={loadingMore}
+                  className="w-full rounded-lg border border-surface-border/60 py-2 text-xs text-slate-400 hover:border-accent/40 hover:text-accent disabled:opacity-50">
+                  {loadingMore ? "Loading…" : `Load more (${total - rows.length} remaining)`}
+                </button>
+              </div>
+            )}
+            </>
           )}
         </div>
       </div>
