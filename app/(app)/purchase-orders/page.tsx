@@ -612,6 +612,19 @@ export default function PurchaseOrdersPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!detail) return;
+    if (!confirm(`Delete purchase order ${detail.purchase_number}? This cannot be undone.`)) return;
+    try {
+      await api(`/api/v1/purchase-orders/${detail.id}`, { method: "DELETE" });
+      setDetail(null);
+      setSelectedId(null);
+      loadList();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Delete failed");
+    }
+  }
+
   // ── Derive created_at from list row (detail API does not return it) ─────────
   const matchedRow = rows.find((r) => r.id === selectedId) ?? null;
 
@@ -1192,6 +1205,15 @@ export default function PurchaseOrdersPage() {
                       >
                         Edit
                       </button>
+                      {detail.status !== 4 && (
+                        <button
+                          type="button"
+                          onClick={handleDelete}
+                          className="rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-semibold text-red-400 transition-colors hover:border-red-400 hover:text-red-300"
+                        >
+                          Delete
+                        </button>
+                      )}
                       {detail.status !== 4 && detail.status !== 5 && (
                         <button
                           type="button"
