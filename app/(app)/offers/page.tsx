@@ -848,7 +848,7 @@ export default function OffersPage() {
                     className="rounded-lg border border-surface-border px-5 py-2 text-sm text-slate-400 hover:text-white">
                     Cancel
                   </button>
-                  {isEditing && detail?.status !== "accepted" && (
+                  {isEditing && (
                     <button type="button" onClick={handleDelete}
                       className="rounded-lg border border-red-500/30 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10">
                       Delete
@@ -898,31 +898,35 @@ export default function OffersPage() {
                       </div>
                     </div>
 
-                    {detail.status !== "accepted" && detail.status !== "rejected" && (
-                      <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
-                        <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Update Status</p>
-                        <div className="flex flex-wrap gap-2">
-                          {detail.status === "draft" && (
-                            <button type="button" onClick={() => handleStatusChange("sent")}
-                              className="rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-500/20">
-                              Mark as Sent
-                            </button>
-                          )}
-                          {(detail.status === "draft" || detail.status === "sent") && (
-                            <>
-                              <button type="button" onClick={() => handleStatusChange("accepted")}
-                                className="rounded-full border border-green-500/40 bg-green-500/10 px-3 py-1.5 text-xs font-medium text-green-400 hover:bg-green-500/20">
-                                Accept
-                              </button>
-                              <button type="button" onClick={() => handleStatusChange("rejected")}
-                                className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20">
-                                Reject
-                              </button>
-                            </>
-                          )}
-                        </div>
+                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Update Status</p>
+                      <div className="flex flex-wrap gap-2">
+                        {detail.status !== "draft" && (
+                          <button type="button" onClick={() => handleStatusChange("draft")}
+                            className="rounded-full border border-slate-500/40 bg-slate-500/10 px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-500/20">
+                            Draft
+                          </button>
+                        )}
+                        {detail.status !== "sent" && (
+                          <button type="button" onClick={() => handleStatusChange("sent")}
+                            className="rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-500/20">
+                            Open
+                          </button>
+                        )}
+                        {detail.status !== "accepted" && (
+                          <button type="button" onClick={() => handleStatusChange("accepted")}
+                            className="rounded-full border border-green-500/40 bg-green-500/10 px-3 py-1.5 text-xs font-medium text-green-400 hover:bg-green-500/20">
+                            Accept
+                          </button>
+                        )}
+                        {detail.status !== "rejected" && (
+                          <button type="button" onClick={() => handleStatusChange("rejected")}
+                            className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20">
+                            Reject
+                          </button>
+                        )}
                       </div>
-                    )}
+                    </div>
 
 
                     <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
