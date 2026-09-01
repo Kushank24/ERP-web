@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
@@ -63,6 +64,9 @@ function ErrorAlert({ message }: { message: string }) {
 const PAGE_SIZE = 50;
 
 export default function EnquiriesPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [rows, setRows] = useState<EnquiryRow[]>([]);
   const [total, setTotal] = useState(0);
   const [rowOffset, setRowOffset] = useState(0);
@@ -111,6 +115,16 @@ export default function EnquiriesPage() {
   const loadList = useCallback(() => {
     fetchPage(searchText, filterStatus, 0, false);
   }, [fetchPage, searchText, filterStatus]);
+
+  // Auto-open a specific enquiry when navigated from analytics with ?id=N
+  useEffect(() => {
+    if (listLoading) return;
+    const id = searchParams.get("id");
+    if (!id) return;
+    router.replace("/enquiries");
+    setSelectedId(Number(id));
+    loadDetail(Number(id));
+  }, [listLoading, searchParams, router]);
 
   useEffect(() => {
     fetchPage("", "", 0, false);

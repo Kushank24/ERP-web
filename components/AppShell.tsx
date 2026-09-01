@@ -117,10 +117,10 @@ function NavIcon({ name, className = "h-4 w-4" }: { name: string; className?: st
 
 const NAV_GROUPS: { label: string; keys: string[] }[] = [
   { label: "Overview", keys: ["dashboard"] },
-  { label: "CRM", keys: ["companies", "enquiries", "offers", "product_catalog"] },
-  { label: "Procurement", keys: ["purchase_orders"] },
-  { label: "Production", keys: ["work_orders", "products_boq", "inventory", "finished_goods"] },
-  { label: "Sales", keys: ["sales_orders", "pricing"] },
+  { label: "CRM", keys: ["companies", "enquiries", "offers", "product_catalog", "crm_analytics"] },
+  { label: "Procurement", keys: ["purchase_orders", "po_analytics"] },
+  { label: "Production", keys: ["work_orders", "products_boq", "inventory", "finished_goods", "production_analytics"] },
+  { label: "Sales", keys: ["sales_orders", "pricing", "so_analytics"] },
   { label: "Marketing", keys: ["email_campaigns"] },
   { label: "System", keys: ["settings"] },
 ];

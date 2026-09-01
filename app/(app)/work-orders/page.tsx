@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, FormEvent } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { api, apiBlob } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
@@ -206,6 +207,9 @@ function fmtDate(d: string | null | undefined): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function WorkOrdersPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   // ── List state ──────────────────────────────────────────────────────────────
   const [rows, setRows] = useState<WORow[]>([]);
   const [total, setTotal] = useState(0);
@@ -293,6 +297,15 @@ export default function WorkOrdersPage() {
   const loadList = useCallback(() => {
     fetchPage(searchText, statusFilter, 0, false);
   }, [fetchPage, searchText, statusFilter]);
+
+  // Auto-open a specific WO when navigated from analytics with ?id=N
+  useEffect(() => {
+    if (listLoading) return;
+    const id = searchParams.get("id");
+    if (!id) return;
+    router.replace("/work-orders");
+    setSelectedId(Number(id));
+  }, [listLoading, searchParams, router]);
 
   // ── Load lists for selectors ──────────────────────────────────────────────
   const loadSelectors = useCallback(() => {
