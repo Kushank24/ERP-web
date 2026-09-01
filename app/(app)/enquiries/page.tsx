@@ -216,7 +216,7 @@ export default function EnquiriesPage() {
 
   const panelOpen = showForm || selectedId !== null;
   const { sorted: filteredRows, sortKey: enqSortKey, sortDir: enqSortDir, toggleSort: toggleEnqSort } =
-    useSortedData(rows, "enquiry_number" as keyof EnquiryRow);
+    useSortedData(rows, "enquiry_date" as keyof EnquiryRow, "desc");
   const hasMore = rows.length < total;
 
   return (
@@ -273,9 +273,10 @@ export default function EnquiriesPage() {
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider">
             <SortHeader label="Enquiry #" colKey="enquiry_number" currentKey={enqSortKey as string} currentDir={enqSortDir} onSort={k => toggleEnqSort(k as keyof EnquiryRow)} />
             <SortHeader label="Company" colKey="company_name" currentKey={enqSortKey as string} currentDir={enqSortDir} onSort={k => toggleEnqSort(k as keyof EnquiryRow)} />
+            <SortHeader label="Date" colKey="enquiry_date" currentKey={enqSortKey as string} currentDir={enqSortDir} onSort={k => toggleEnqSort(k as keyof EnquiryRow)} />
             <SortHeader label="Status" colKey="status" currentKey={enqSortKey as string} currentDir={enqSortDir} onSort={k => toggleEnqSort(k as keyof EnquiryRow)} />
           </div>
         </div>
@@ -304,13 +305,13 @@ export default function EnquiriesPage() {
                   <li key={row.id}>
                     <button type="button" onClick={() => handleRowClick(row.id)}
                       className={`w-full border-b border-surface-border/30 px-4 py-3 text-left last:border-b-0 transition-colors ${isActive ? "border-l-2 border-l-accent bg-accent/10" : "hover:bg-white/[0.025]"}`}>
-                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_auto] items-center gap-2">
                         <span className={`truncate text-xs font-semibold ${isActive ? "text-accent" : "text-white"}`}>{row.enquiry_number}</span>
                         <span className="truncate text-xs text-slate-400">{row.company_name || "—"}</span>
+                        <span className="text-xs text-slate-400">{fmtDate(row.enquiry_date)}</span>
                         <StatusBadge status={row.status} />
                       </div>
                       <div className="mt-1 flex items-center gap-3 text-[10px] text-slate-600">
-                        <span>{fmtDate(row.enquiry_date)}</span>
                         <PriorityBadge priority={row.priority} />
                       </div>
                     </button>
