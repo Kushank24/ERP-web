@@ -439,7 +439,7 @@ export default function OffersPage() {
 
   const panelOpen = showForm || selectedId !== null;
   const { sorted: filteredRows, sortKey: offerSortKey, sortDir: offerSortDir, toggleSort: toggleOfferSort } =
-    useSortedData<OfferRow>(rows, "offer_number");
+    useSortedData<OfferRow>(rows, "offer_date", "desc");
   const hasMore = rows.length < total;
 
   const { subtotal: fSubtotal, total: fTotal } = calcTotals();
@@ -493,9 +493,10 @@ export default function OffersPage() {
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider">
             <SortHeader label="Offer #" colKey="offer_number" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
             <SortHeader label="Company" colKey="company_name" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
+            <SortHeader label="Date" colKey="offer_date" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
             <SortHeader label="Amount" colKey="total_amount" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} className="justify-end" />
             <SortHeader label="Status" colKey="status" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
           </div>
@@ -526,15 +527,16 @@ export default function OffersPage() {
                   <li key={row.id}>
                     <button type="button" onClick={() => handleRowClick(row.id)}
                       className={"w-full border-b border-surface-border/30 px-4 py-3 text-left last:border-b-0 transition-colors " + (isActive ? "border-l-2 border-l-accent bg-accent/10" : "hover:bg-white/[0.025]")}>
-                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_auto] items-center gap-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto] items-center gap-2">
                         <span className={"truncate text-xs font-semibold " + (isActive ? "text-accent" : "text-white")}>{row.offer_number}</span>
                         <span className="truncate text-xs text-slate-400">{row.company_name || "—"}</span>
+                        <span className="text-xs text-slate-400">{fmtDate(row.offer_date)}</span>
                         <span className="text-right font-mono text-xs text-slate-300">{fmt(row.total_amount)}</span>
                         <StatusBadge status={row.status} />
                       </div>
-                      <div className="mt-1 text-[10px] text-slate-600">
-                        {fmtDate(row.offer_date)}{row.enquiry_number ? " · " + row.enquiry_number : ""}
-                      </div>
+                      {row.enquiry_number && (
+                        <div className="mt-1 text-[10px] text-slate-600">{row.enquiry_number}</div>
+                      )}
                     </button>
                   </li>
                 );
