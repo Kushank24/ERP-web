@@ -216,6 +216,8 @@ export default function WorkOrdersPage() {
   const [searchInput, setSearchInput] = useState("");
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // ── Detail state ────────────────────────────────────────────────────────────
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -273,6 +275,8 @@ export default function WorkOrdersPage() {
     const params = new URLSearchParams({ limit: "50", offset: String(off) });
     if (q.trim()) params.set("q", q.trim());
     if (status) params.set("status", status);
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
     api<{ data: WORow[]; total: number }>(`/api/v1/work-orders?${params}`)
       .then(({ data, total: t }) => {
         setRows(prev => append ? [...prev, ...data] : data);
@@ -301,6 +305,12 @@ export default function WorkOrdersPage() {
   }, []);
 
   useEffect(() => { fetchPage("", "", 0, false); loadSelectors(); }, [fetchPage, loadSelectors]);
+
+  // Date filter → refetch
+  useEffect(() => {
+    fetchPage(searchText, statusFilter, 0, false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
 
   // Debounce search → refetch from offset 0
   const woDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -632,22 +642,36 @@ export default function WorkOrdersPage() {
 
         {/* Search + status filter */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-1.5">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-slate-500">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3 w-3"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5"/></svg>
-              </span>
-              <input type="search" value={searchInput} placeholder="Search WO #, PO #, party…"
-                onChange={e => setSearchInput(e.target.value)}
-                className="w-full rounded border border-surface-border/60 bg-[#0b0f14] py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-slate-500">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3 w-3"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5"/></svg>
+                </span>
+                <input type="search" value={searchInput} placeholder="Search WO #, PO #, party…"
+                  onChange={e => setSearchInput(e.target.value)}
+                  className="w-full rounded border border-surface-border/60 bg-[#0b0f14] py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
+              </div>
+              <select value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="rounded border border-surface-border/60 bg-[#0b0f14] px-1.5 py-1 text-[11px] text-slate-300 outline-none transition focus:border-accent/50">
+                <option value="">All statuses</option>
+                <option value="in-progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
             </div>
-            <select value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="rounded border border-surface-border/60 bg-[#0b0f14] px-1.5 py-1 text-[11px] text-slate-300 outline-none transition focus:border-accent/50">
-              <option value="">All statuses</option>
-              <option value="in-progress">In Progress</option>
-              <option value="completed">Completed</option>
-            </select>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-500">Date:</span>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none transition focus:border-accent/50 [color-scheme:dark]" />
+              <span className="text-[10px] text-slate-600">–</span>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none transition focus:border-accent/50 [color-scheme:dark]" />
+              {(dateFrom || dateTo) && (
+                <button type="button" onClick={() => { setDateFrom(""); setDateTo(""); }}
+                  className="text-[10px] text-slate-500 hover:text-white">✕ Clear</button>
+              )}
+            </div>
           </div>
         </div>
 

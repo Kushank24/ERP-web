@@ -202,6 +202,32 @@ export default function FinishedGoodsPage() {
   const [rvNotes, setRvNotes] = useState("");
   const [returning, setReturning] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
+  const [rvFoundPrice, setRvFoundPrice] = useState<number | null>(null);
+
+  // When material name changes, look up its price in inventory
+  useEffect(() => {
+    if (!rvMatName.trim()) { setRvFoundPrice(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api<{ items: { name: string; per_unit_cost: number; unit: string }[] }>(
+          `/api/v1/materials?q=${encodeURIComponent(rvMatName.trim())}&limit=20`
+        );
+        if (cancelled) return;
+        const match = res.items.find(
+          (m) => m.name.toLowerCase().trim() === rvMatName.toLowerCase().trim()
+        );
+        if (match) {
+          setRvFoundPrice(match.per_unit_cost);
+          setRvCost(String(match.per_unit_cost));
+          if (match.unit) setRvUnit(match.unit);
+        } else {
+          setRvFoundPrice(null);
+        }
+      } catch { if (!cancelled) setRvFoundPrice(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [rvMatName]);
 
   function openReturn(row: FGRow) {
     setReturnTarget(row);
@@ -209,10 +235,11 @@ export default function FinishedGoodsPage() {
     setRvMatName(row.product_name);
     setRvUnit("Nos");
     setRvCost("0");
+    setRvFoundPrice(null);
     setRvNotes("");
     setReturnError(null);
   }
-  function closeReturn() { setReturnTarget(null); }
+  function closeReturn() { setReturnTarget(null); setRvMatName(""); setRvFoundPrice(null); }
 
   async function handleReturn(e: FormEvent) {
     e.preventDefault();
@@ -280,11 +307,9 @@ export default function FinishedGoodsPage() {
 
   // ── Load work order options ─────────────────────────────────────────────────
   const loadWOs = useCallback(() => {
-    api<WOOption[]>("/api/v1/work-orders")
-      .then(setWoOptions)
-      .catch(() => {
-        /* non-fatal */
-      });
+    api<{ data: WOOption[] }>("/api/v1/work-orders")
+      .then((res) => setWoOptions(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {});
   }, []);
 
   useEffect(() => { loadData(""); loadWOs(); }, [loadData, loadWOs]);
@@ -923,11 +948,16 @@ export default function FinishedGoodsPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-400">Cost per unit</label>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-400">
+                    Cost per unit
+                    {rvFoundPrice !== null && (
+                      <span className="ml-1.5 text-emerald-400">(from inventory)</span>
+                    )}
+                  </label>
                   <input
                     type="number" step="any" min="0"
                     value={rvCost}
-                    onChange={e => setRvCost(e.target.value)}
+                    onChange={e => { setRvCost(e.target.value); setRvFoundPrice(null); }}
                     className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white outline-none focus:border-accent/50"
                     placeholder="0"
                   />

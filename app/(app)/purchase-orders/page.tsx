@@ -236,6 +236,8 @@ export default function PurchaseOrdersPage() {
   const [listError, setListError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchText, setSearchText] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // ── Detail state ───────────────────────────────────────────────────────────
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -303,12 +305,16 @@ export default function PurchaseOrdersPage() {
   const loadList = useCallback((q = searchText) => {
     setListLoading(true);
     setListError(null);
-    const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+    const p = new URLSearchParams();
+    if (q.trim()) p.set("q", q.trim());
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo) p.set("date_to", dateTo);
+    const qs = p.toString() ? `?${p}` : "";
     api<PORow[]>(`/api/v1/purchase-orders${qs}`)
       .then((data) => { setRows(data); setListLoading(false); })
       .catch((e: Error) => { setListError(e.message ?? "Failed to load purchase orders"); setListLoading(false); });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => { loadList(""); loadDropdowns(); }, [loadList, loadDropdowns]);
 
@@ -691,15 +697,26 @@ export default function PurchaseOrdersPage() {
           </div>
         )}
 
-        {/* Search filter */}
+        {/* Search + date filter */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-1.5">
-          <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-slate-500">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3 w-3"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5"/></svg>
-            </span>
-            <input type="search" value={searchInput} placeholder="Search PO #, supplier…"
-              onChange={e => setSearchInput(e.target.value)}
-              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-slate-500">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3 w-3"><circle cx="6.5" cy="6.5" r="4"/><path d="M11 11l2.5 2.5"/></svg>
+              </span>
+              <input type="search" value={searchInput} placeholder="Search PO #, supplier…"
+                onChange={e => setSearchInput(e.target.value)}
+                className="w-full rounded border border-surface-border/60 bg-[#0b0f14] py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
+            </div>
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); }}
+              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none transition focus:border-accent/50 [color-scheme:dark]" />
+            <span className="text-[10px] text-slate-600">–</span>
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); }}
+              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none transition focus:border-accent/50 [color-scheme:dark]" />
+            {(dateFrom || dateTo) && (
+              <button type="button" onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="text-[10px] text-slate-500 hover:text-white">✕</button>
+            )}
           </div>
         </div>
 
