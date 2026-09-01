@@ -131,6 +131,8 @@ export default function OffersPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [searchText, setSearchText] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<OfferDetail | null>(null);
@@ -153,6 +155,8 @@ export default function OffersPage() {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(off) });
     if (q) params.set("q", q);
     if (status) params.set("status", status);
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
     api<{ data: OfferRow[]; total: number }>(`/api/v1/offers?${params}`)
       .then(res => {
         setRows(prev => append ? [...prev, ...res.data] : res.data);
@@ -234,6 +238,11 @@ export default function OffersPage() {
   useEffect(() => {
     fetchPage(searchText, filterStatus, 0, false);
   }, [filterStatus]);
+
+  // Date filter → server
+  useEffect(() => {
+    fetchPage(searchText, filterStatus, 0, false);
+  }, [dateFrom, dateTo]);
 
   const loadDetail = useCallback((id: number) => {
     setDetailLoading(true); setDetailError(null); setDetail(null);
@@ -459,14 +468,28 @@ export default function OffersPage() {
           </div>
         </div>
 
-        <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2 flex gap-2">
-          <input type="search" placeholder="Search…" value={searchInput} onChange={e => setSearchInput(e.target.value)}
-            className="flex-1 rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none focus:border-accent/50" />
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-            className="rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-accent/50">
-            <option value="">All</option>
-            {["draft","sent","accepted","rejected","expired"].map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+        <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2 space-y-1.5">
+          <div className="flex gap-2">
+            <input type="search" placeholder="Search…" value={searchInput} onChange={e => setSearchInput(e.target.value)}
+              className="flex-1 rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none focus:border-accent/50" />
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-accent/50">
+              <option value="">All</option>
+              {["draft","sent","accepted","rejected","expired"].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-500">Date:</span>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none focus:border-accent/50 [color-scheme:dark]" />
+            <span className="text-[10px] text-slate-600">–</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none focus:border-accent/50 [color-scheme:dark]" />
+            {(dateFrom || dateTo) && (
+              <button type="button" onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="text-[10px] text-slate-500 hover:text-white">✕ Clear</button>
+            )}
+          </div>
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">

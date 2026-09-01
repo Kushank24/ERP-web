@@ -73,8 +73,11 @@ export default function EnquiriesPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [searchText, setSearchText] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const searchFirstRun = useRef(true);
   const filterFirstRun = useRef(true);
+  const dateFirstRun = useRef(true);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<EnquiryDetail | null>(null);
@@ -93,6 +96,8 @@ export default function EnquiriesPage() {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(off) });
     if (q) params.set("q", q);
     if (status) params.set("status", status);
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
     api<{ data: EnquiryRow[]; total: number }>(`/api/v1/enquiries?${params}`)
       .then(res => {
         setRows(prev => append ? [...prev, ...res.data] : res.data);
@@ -125,6 +130,12 @@ export default function EnquiriesPage() {
     if (filterFirstRun.current) { filterFirstRun.current = false; return; }
     fetchPage(searchText, filterStatus, 0, false);
   }, [filterStatus]);
+
+  // Date filter → server (skip initial mount)
+  useEffect(() => {
+    if (dateFirstRun.current) { dateFirstRun.current = false; return; }
+    fetchPage(searchText, filterStatus, 0, false);
+  }, [dateFrom, dateTo]);
 
   const loadDetail = useCallback((id: number) => {
     setDetailLoading(true);
@@ -233,18 +244,32 @@ export default function EnquiriesPage() {
           </div>
         </div>
 
-        <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2 flex gap-2">
-          <input type="search" placeholder="Search…" value={searchInput} onChange={e => setSearchInput(e.target.value)}
-            className="flex-1 rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none focus:border-accent/50" />
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-            className="rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-accent/50">
-            <option value="">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="in_progress">In Progress</option>
-            <option value="offer_sent">Offer Sent</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+        <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2 space-y-1.5">
+          <div className="flex gap-2">
+            <input type="search" placeholder="Search…" value={searchInput} onChange={e => setSearchInput(e.target.value)}
+              className="flex-1 rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none focus:border-accent/50" />
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-accent/50">
+              <option value="">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="in_progress">In Progress</option>
+              <option value="offer_sent">Offer Sent</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-500">Date:</span>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none focus:border-accent/50 [color-scheme:dark]" />
+            <span className="text-[10px] text-slate-600">–</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none focus:border-accent/50 [color-scheme:dark]" />
+            {(dateFrom || dateTo) && (
+              <button type="button" onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="text-[10px] text-slate-500 hover:text-white">✕ Clear</button>
+            )}
+          </div>
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">

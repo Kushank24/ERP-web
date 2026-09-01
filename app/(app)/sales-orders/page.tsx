@@ -240,6 +240,8 @@ export default function SalesOrdersPage() {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [colFilters, setColFilters] = useState({ invoice: "", company: "", status: "" });
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // ── Detail state ───────────────────────────────────────────────────────────
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -298,7 +300,11 @@ export default function SalesOrdersPage() {
   const loadList = useCallback(() => {
     setListLoading(true);
     setListError(null);
-    api<SORow[]>("/api/v1/sales-orders")
+    const p = new URLSearchParams();
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo) p.set("date_to", dateTo);
+    const qs = p.toString() ? `?${p}` : "";
+    api<SORow[]>(`/api/v1/sales-orders${qs}`)
       .then((data) => {
         setRows(data);
         setListLoading(false);
@@ -307,7 +313,8 @@ export default function SalesOrdersPage() {
         setListError(e.message ?? "Failed to load sales orders");
         setListLoading(false);
       });
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     loadList();
@@ -619,7 +626,7 @@ export default function SalesOrdersPage() {
         )}
 
         {/* Column filters */}
-        <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-1.5">
+        <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-1.5 space-y-1.5">
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto] items-center gap-2">
             <input type="search" value={colFilters.invoice} placeholder="Invoice #…"
               onChange={e => setColFilters(p => ({ ...p, invoice: e.target.value }))}
@@ -636,6 +643,18 @@ export default function SalesOrdersPage() {
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-500">Date:</span>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none transition focus:border-accent/50 [color-scheme:dark]" />
+            <span className="text-[10px] text-slate-600">–</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none transition focus:border-accent/50 [color-scheme:dark]" />
+            {(dateFrom || dateTo) && (
+              <button type="button" onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="text-[10px] text-slate-500 hover:text-white">✕ Clear</button>
+            )}
           </div>
         </div>
 
