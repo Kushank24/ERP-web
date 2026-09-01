@@ -233,6 +233,16 @@ export default function OffersPage() {
       });
   }, [listLoading, searchParams, router]);
 
+  // Auto-open a specific offer when navigated from analytics with ?id=N
+  useEffect(() => {
+    if (listLoading) return;
+    const id = searchParams.get("id");
+    if (!id) return;
+    router.replace("/offers");
+    setSelectedId(Number(id));
+    loadDetail(Number(id));
+  }, [listLoading, searchParams, router]);
+
   // Debounce search → server
   useEffect(() => {
     const t = setTimeout(() => { setSearchText(searchInput); fetchPage(searchInput, filterStatus, 0, false); }, 350);

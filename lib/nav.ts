@@ -12,5 +12,9 @@ export const MODULE_NAV: Record<string, { href: string; label: string }> = {
   work_orders: { href: "/work-orders", label: "Work Orders" },
   finished_goods: { href: "/finished-goods", label: "Finished Goods" },
   email_campaigns: { href: "/email-campaigns", label: "Email Campaigns" },
+  crm_analytics: { href: "/crm-analytics", label: "CRM Analytics" },
+  production_analytics: { href: "/production-analytics", label: "Production Analytics" },
+  po_analytics: { href: "/po-analytics", label: "PO Analytics" },
+  so_analytics: { href: "/so-analytics", label: "SO Analytics" },
   settings: { href: "/settings", label: "System Settings" },
 };
