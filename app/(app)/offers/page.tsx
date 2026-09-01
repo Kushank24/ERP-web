@@ -98,9 +98,14 @@ function fmtDate(d: string | null | undefined) {
 }
 function fmt(n: number | string) { return "₹" + Number(n).toFixed(2); }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, offerDate }: { status: string; offerDate?: string }) {
   const cls = STATUS_COLORS[status] || "bg-slate-500/20 text-slate-400 border-slate-500/30";
-  return <span className={"inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide " + cls}>{status}</span>;
+  let label = status;
+  if (status === "sent" && offerDate) {
+    const days = Math.floor((Date.now() - new Date(offerDate).getTime()) / 86_400_000);
+    label = days > 0 ? `Open · ${days}d` : "Open";
+  }
+  return <span className={"inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide " + cls}>{label}</span>;
 }
 function Skeleton({ className = "" }: { className?: string }) {
   return <div className={"animate-pulse rounded bg-surface-border/40 " + className} />;
@@ -405,8 +410,7 @@ export default function OffersPage() {
 
   async function handleStatusChange(newStatus: string) {
     if (!detail) return;
-    const extra = newStatus === "accepted" ? "\n\nThis will auto-create a Sales Order." : "";
-    if (!confirm("Mark offer " + detail.offer_number + " as \"" + newStatus + "\"?" + extra)) return;
+    if (!confirm("Mark offer " + detail.offer_number + " as \"" + newStatus + "\"?")) return;
     try {
       const updated = await api<OfferDetail>("/api/v1/offers/" + detail.id + "/status", { method: "PATCH", json: { status: newStatus } });
       setDetail(updated);
@@ -475,7 +479,11 @@ export default function OffersPage() {
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
               className="rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-accent/50">
               <option value="">All</option>
-              {["draft","sent","accepted","rejected","expired"].map(s => <option key={s} value={s}>{s}</option>)}
+              <option value="draft">Draft</option>
+              <option value="sent">Open</option>
+              <option value="accepted">Accepted</option>
+              <option value="rejected">Rejected</option>
+              <option value="expired">Expired</option>
             </select>
           </div>
           <div className="flex items-center gap-2">
@@ -532,7 +540,7 @@ export default function OffersPage() {
                         <span className="truncate text-xs text-slate-400">{row.company_name || "—"}</span>
                         <span className="text-xs text-slate-400">{fmtDate(row.offer_date)}</span>
                         <span className="text-right font-mono text-xs text-slate-300">{fmt(row.total_amount)}</span>
-                        <StatusBadge status={row.status} />
+                        <StatusBadge status={row.status} offerDate={row.offer_date} />
                       </div>
                       {row.enquiry_number && (
                         <div className="mt-1 text-[10px] text-slate-600">{row.enquiry_number}</div>
@@ -876,7 +884,7 @@ export default function OffersPage() {
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-2">
-                        <StatusBadge status={detail.status} />
+                        <StatusBadge status={detail.status} offerDate={detail.offer_date} />
                         {detail.status !== "accepted" && (
                           <button type="button" onClick={startEdit}
                             className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white">
@@ -904,7 +912,7 @@ export default function OffersPage() {
                             <>
                               <button type="button" onClick={() => handleStatusChange("accepted")}
                                 className="rounded-full border border-green-500/40 bg-green-500/10 px-3 py-1.5 text-xs font-medium text-green-400 hover:bg-green-500/20">
-                                Accept → Create SO
+                                Accept
                               </button>
                               <button type="button" onClick={() => handleStatusChange("rejected")}
                                 className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20">
@@ -916,11 +924,6 @@ export default function OffersPage() {
                       </div>
                     )}
 
-                    {detail.status === "accepted" && detail.sales_order_id && (
-                      <div className="rounded-xl border border-green-500/20 bg-green-500/5 px-4 py-3 text-sm text-green-400">
-                        ✓ Sales Order auto-created · SO-{detail.offer_number}
-                      </div>
-                    )}
 
                     <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
                       <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Company</p>
