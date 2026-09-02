@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
@@ -31,6 +31,7 @@ export default function CompaniesPage() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -114,6 +115,21 @@ export default function CompaniesPage() {
     useSortedData<Company>(companies, "name");
   const hasMore = companies.length < total;
 
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !loadingMore) {
+          fetchPage(search, offset, true);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, loadingMore, fetchPage, search, offset]);
+
   return (
     <div className="flex h-[calc(100vh-7rem)] min-h-0 gap-5">
 
@@ -187,11 +203,8 @@ export default function CompaniesPage() {
                 })}
               </ul>
               {hasMore && (
-                <div className="border-t border-surface-border/30 p-3">
-                  <button onClick={() => fetchPage(search, offset, true)} disabled={loadingMore}
-                    className="w-full rounded-lg border border-surface-border/60 py-2 text-xs text-slate-400 hover:border-accent/40 hover:text-accent disabled:opacity-50">
-                    {loadingMore ? "Loading…" : `Load more (${total - companies.length} remaining)`}
-                  </button>
+                <div ref={sentinelRef} className="py-4 text-center text-xs text-slate-500">
+                  {loadingMore ? "Loading…" : ""}
                 </div>
               )}
             </>

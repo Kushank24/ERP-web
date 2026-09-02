@@ -562,6 +562,61 @@ function CustomerDetailPanel({
   );
 }
 
+// ── Date Range Picker ─────────────────────────────────────────────────────────
+
+function fmtIso(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function DateRangePicker({
+  from, to, onChange,
+}: {
+  from: string; to: string;
+  onChange: (from: string, to: string) => void;
+}) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const today = fmtIso(now);
+
+  const presets = [
+    { label: "This Month", from: fmtIso(new Date(y, m, 1)),     to: today },
+    { label: "Last 3M",    from: fmtIso(new Date(y, m - 3, 1)), to: today },
+    { label: "Last 6M",    from: fmtIso(new Date(y, m - 6, 1)), to: today },
+    { label: "This Year",  from: fmtIso(new Date(y, 0, 1)),      to: today },
+    { label: "All Time",   from: "",                              to: ""   },
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {presets.map((p) => (
+        <button
+          key={p.label}
+          onClick={() => onChange(p.from, p.to)}
+          className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+            from === p.from && to === p.to
+              ? "border-green-500 bg-green-500/20 text-green-400"
+              : "border-surface-border text-slate-400 hover:border-slate-500 hover:text-white"
+          }`}
+        >
+          {p.label}
+        </button>
+      ))}
+      <input
+        type="date" value={from}
+        onChange={(e) => onChange(e.target.value, to)}
+        className="rounded border border-surface-border bg-[#0f1419] px-2 py-1 text-xs text-white [color-scheme:dark]"
+      />
+      <span className="text-xs text-slate-500">to</span>
+      <input
+        type="date" value={to}
+        onChange={(e) => onChange(from, e.target.value)}
+        className="rounded border border-surface-border bg-[#0f1419] px-2 py-1 text-xs text-white [color-scheme:dark]"
+      />
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SoAnalyticsPage() {
@@ -573,11 +628,20 @@ export default function SoAnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewSoId, setPreviewSoId] = useState<number | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const openSoPreview = useCallback((id: number) => setPreviewSoId(id), []);
 
   useEffect(() => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    const qs = params.toString() ? `?${params}` : "";
+
+    setLoading(true);
+    setError(null);
     Promise.all([
-      api<SoData>("/api/v1/analytics/so"),
+      api<SoData>(`/api/v1/analytics/so${qs}`),
       api<CustomerSummary[]>("/api/v1/analytics/so/customers"),
     ])
       .then(([so, cus]) => {
@@ -587,7 +651,7 @@ export default function SoAnalyticsPage() {
         if (cus.length > 0) setSelectedCustomer(cus[0].name);
       })
       .catch((e) => { setError(e.message); setLoading(false); });
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     if (!selectedCustomer) return;
@@ -625,6 +689,20 @@ export default function SoAnalyticsPage() {
     <>
     {previewSoId !== null && <SoPreviewModal soId={previewSoId} onClose={() => setPreviewSoId(null)} />}
     <div className="space-y-6">
+
+      {/* ── Date Range Picker ── */}
+      <div className="space-y-2">
+        <DateRangePicker
+          from={dateFrom}
+          to={dateTo}
+          onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+        />
+        {(dateFrom || dateTo) && (
+          <p className="text-xs text-slate-400">
+            Showing data {dateFrom ? `from ${dateFrom}` : ""}{dateFrom && dateTo ? " " : ""}{dateTo ? `to ${dateTo}` : ""}
+          </p>
+        )}
+      </div>
 
       {/* ── KPI Row ── */}
       {loading ? (

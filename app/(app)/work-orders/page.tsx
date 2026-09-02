@@ -215,6 +215,7 @@ export default function WorkOrdersPage() {
   const [total, setTotal] = useState(0);
   const [rowOffset, setRowOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
@@ -589,7 +590,23 @@ export default function WorkOrdersPage() {
     }
   }
 
+  const hasMore = rows.length < total;
   const panelOpen = showForm || selectedId !== null;
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !loadingMore) {
+          fetchPage(searchText, statusFilter, rowOffset, true);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, loadingMore, fetchPage, searchText, statusFilter, rowOffset]);
 
   function closePanel() {
     setShowForm(false);
@@ -760,12 +777,9 @@ export default function WorkOrdersPage() {
                 );
               })}
             </ul>
-            {rows.length < total && (
-              <div className="border-t border-surface-border/30 p-3">
-                <button type="button" onClick={() => fetchPage(searchText, statusFilter, rowOffset, true)} disabled={loadingMore}
-                  className="w-full rounded-lg border border-surface-border/60 py-2 text-xs text-slate-400 hover:border-accent/40 hover:text-accent disabled:opacity-50">
-                  {loadingMore ? "Loading…" : `Load more (${total - rows.length} remaining)`}
-                </button>
+            {hasMore && (
+              <div ref={sentinelRef} className="py-4 text-center text-xs text-slate-500">
+                {loadingMore ? "Loading…" : ""}
               </div>
             )}
             </>

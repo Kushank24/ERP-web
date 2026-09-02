@@ -159,9 +159,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const currentItem = MODULE_NAV[currentKey];
 
   return (
-    <div className="flex min-h-screen bg-[#0b0f14]">
+    <div className="flex h-screen overflow-hidden bg-[#0b0f14]">
       {/* ── Sidebar ── */}
-      <aside className="flex w-56 shrink-0 flex-col border-r border-surface-border bg-surface-card">
+      <aside className="flex h-screen w-56 shrink-0 sticky top-0 flex-col border-r border-surface-border bg-surface-card overflow-y-auto">
         {/* Brand */}
         <div className="border-b border-surface-border px-5 py-4">
           <p className="text-[10px] font-bold uppercase tracking-widest text-accent">
@@ -249,7 +249,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Main content ── */}
-      <main className="min-w-0 flex-1 overflow-auto">
+      <main className="min-w-0 flex-1 h-screen overflow-y-auto">
         {/* Top bar */}
         <header className="sticky top-0 z-10 border-b border-surface-border bg-[#0b0f14]/80 px-8 py-3 backdrop-blur-sm">
           <div className="flex items-center justify-between">

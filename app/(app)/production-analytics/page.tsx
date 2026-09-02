@@ -525,6 +525,61 @@ function ClientDetailPanel({ detail, onWoPreview }: { detail: ClientDetail; onWo
   );
 }
 
+// ── Date Range Picker ─────────────────────────────────────────────────────────
+
+function fmtIso(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function DateRangePicker({
+  from, to, onChange,
+}: {
+  from: string; to: string;
+  onChange: (from: string, to: string) => void;
+}) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const today = fmtIso(now);
+
+  const presets = [
+    { label: "This Month", from: fmtIso(new Date(y, m, 1)),     to: today },
+    { label: "Last 3M",    from: fmtIso(new Date(y, m - 3, 1)), to: today },
+    { label: "Last 6M",    from: fmtIso(new Date(y, m - 6, 1)), to: today },
+    { label: "This Year",  from: fmtIso(new Date(y, 0, 1)),      to: today },
+    { label: "All Time",   from: "",                              to: ""   },
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {presets.map((p) => (
+        <button
+          key={p.label}
+          onClick={() => onChange(p.from, p.to)}
+          className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+            from === p.from && to === p.to
+              ? "border-orange-500 bg-orange-500/20 text-orange-400"
+              : "border-surface-border text-slate-400 hover:border-slate-500 hover:text-white"
+          }`}
+        >
+          {p.label}
+        </button>
+      ))}
+      <input
+        type="date" value={from}
+        onChange={(e) => onChange(e.target.value, to)}
+        className="rounded border border-surface-border bg-[#0f1419] px-2 py-1 text-xs text-white [color-scheme:dark]"
+      />
+      <span className="text-xs text-slate-500">to</span>
+      <input
+        type="date" value={to}
+        onChange={(e) => onChange(from, e.target.value)}
+        className="rounded border border-surface-border bg-[#0f1419] px-2 py-1 text-xs text-white [color-scheme:dark]"
+      />
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ProductionAnalyticsPage() {
@@ -536,12 +591,21 @@ export default function ProductionAnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewWoId, setPreviewWoId] = useState<number | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const openWoPreview = useCallback((id: number) => setPreviewWoId(id), []);
 
   useEffect(() => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    const qs = params.toString() ? `?${params}` : "";
+
+    setLoading(true);
+    setError(null);
     Promise.all([
-      api<ProductionData>("/api/v1/analytics/production"),
-      api<ClientSummary[]>("/api/v1/analytics/production/clients"),
+      api<ProductionData>(`/api/v1/analytics/production${qs}`),
+      api<ClientSummary[]>(`/api/v1/analytics/production/clients${qs}`),
     ])
       .then(([prod, cls]) => {
         setData(prod);
@@ -551,16 +615,21 @@ export default function ProductionAnalyticsPage() {
         if (cls.length > 0) setSelectedClient(cls[0].name);
       })
       .catch((e) => { setError(e.message); setLoading(false); });
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     if (!selectedClient) return;
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    const qs = params.toString() ? `?${params}` : "";
+
     setDetailLoading(true);
     setClientDetail(null);
-    api<ClientDetail>(`/api/v1/analytics/production/client?name=${encodeURIComponent(selectedClient)}`)
+    api<ClientDetail>(`/api/v1/analytics/production/client?name=${encodeURIComponent(selectedClient)}${qs}`)
       .then((d) => { setClientDetail(d); setDetailLoading(false); })
       .catch(() => setDetailLoading(false));
-  }, [selectedClient]);
+  }, [selectedClient, dateFrom, dateTo]);
 
   if (error) {
     return (
@@ -610,6 +679,20 @@ export default function ProductionAnalyticsPage() {
     <>
     {previewWoId !== null && <WoPreviewModal woId={previewWoId} onClose={() => setPreviewWoId(null)} />}
     <div className="space-y-6">
+
+      {/* ── Date Range Picker ── */}
+      <div className="space-y-2">
+        <DateRangePicker
+          from={dateFrom}
+          to={dateTo}
+          onChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+        />
+        {(dateFrom || dateTo) && (
+          <p className="text-xs text-slate-400">
+            Showing data {dateFrom ? `from ${dateFrom}` : ""}{dateFrom && dateTo ? " " : ""}{dateTo ? `to ${dateTo}` : ""}
+          </p>
+        )}
+      </div>
 
       {/* ── KPI Row ── */}
       {loading ? (

@@ -71,6 +71,7 @@ export default function EnquiriesPage() {
   const [total, setTotal] = useState(0);
   const [rowOffset, setRowOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -233,6 +234,21 @@ export default function EnquiriesPage() {
     useSortedData(rows, "enquiry_date" as keyof EnquiryRow, "desc");
   const hasMore = rows.length < total;
 
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !loadingMore) {
+          fetchPage(searchText, filterStatus, rowOffset, true);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, loadingMore, fetchPage, searchText, filterStatus, rowOffset]);
+
   return (
     <div className="flex h-[calc(100vh-7rem)] min-h-0 gap-5">
 
@@ -334,11 +350,8 @@ export default function EnquiriesPage() {
               })}
             </ul>
             {hasMore && (
-              <div className="border-t border-surface-border/30 p-3">
-                <button onClick={() => fetchPage(searchText, filterStatus, rowOffset, true)} disabled={loadingMore}
-                  className="w-full rounded-lg border border-surface-border/60 py-2 text-xs text-slate-400 hover:border-accent/40 hover:text-accent disabled:opacity-50">
-                  {loadingMore ? "Loading…" : `Load more (${total - rows.length} remaining)`}
-                </button>
+              <div ref={sentinelRef} className="py-4 text-center text-xs text-slate-500">
+                {loadingMore ? "Loading…" : ""}
               </div>
             )}
             </>

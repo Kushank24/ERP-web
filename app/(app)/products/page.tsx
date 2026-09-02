@@ -312,6 +312,20 @@ function ProductCard({ product, onRefresh, materials: materialList }: {
     }
   }
 
+  async function downloadBoqPdf() {
+    try {
+      const { blob, filename } = await apiBlob(`/api/v1/products/${product.id}/boq/download-pdf`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || `BOQ_${product.name}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently ignore
+    }
+  }
+
   function refreshBoq() {
     setBoq(null); // clear cache → triggers reload of local BOQ list only
   }
@@ -464,13 +478,22 @@ function ProductCard({ product, onRefresh, materials: materialList }: {
             <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Bill of Quantities</p>
             <div className="flex items-center gap-2">
               {boqCount > 0 && (
-                <button type="button" onClick={downloadBoq} title="Download BOQ as Excel"
-                  className="flex items-center gap-1.5 rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-1 text-[11px] font-medium text-emerald-400 transition-colors hover:bg-emerald-900/40">
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                    <path d="M8 2v8M5 7l3 3 3-3M3 13h10" />
-                  </svg>
-                  Download
-                </button>
+                <>
+                  <button type="button" onClick={downloadBoqPdf} title="Download BOQ as PDF"
+                    className="flex items-center gap-1.5 rounded-lg border border-blue-700/40 bg-blue-900/20 px-3 py-1 text-[11px] font-medium text-blue-400 transition-colors hover:bg-blue-900/40">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                      <path d="M8 2v8M5 7l3 3 3-3M3 13h10" />
+                    </svg>
+                    PDF
+                  </button>
+                  <button type="button" onClick={downloadBoq} title="Download BOQ as Excel"
+                    className="flex items-center gap-1.5 rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-1 text-[11px] font-medium text-emerald-400 transition-colors hover:bg-emerald-900/40">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                      <path d="M8 2v8M5 7l3 3 3-3M3 13h10" />
+                    </svg>
+                    Excel
+                  </button>
+                </>
               )}
               <button type="button" onClick={() => { setShowAdd((v) => !v); setBoqErr(null); }}
                 className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/20">
