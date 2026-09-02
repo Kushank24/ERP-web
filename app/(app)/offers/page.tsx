@@ -129,6 +129,7 @@ export default function OffersPage() {
   const [total, setTotal] = useState(0);
   const [rowOffset, setRowOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -456,6 +457,21 @@ export default function OffersPage() {
     useSortedData<OfferRow>(rows, "offer_date", "desc");
   const hasMore = rows.length < total;
 
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !loadingMore) {
+          fetchPage(searchText, filterStatus, rowOffset, true);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, loadingMore, fetchPage, searchText, filterStatus, rowOffset]);
+
   const { subtotal: fSubtotal, total: fTotal } = calcTotals();
 
   return (
@@ -561,11 +577,8 @@ export default function OffersPage() {
               })}
             </ul>
             {hasMore && (
-              <div className="border-t border-surface-border/30 p-3">
-                <button onClick={() => fetchPage(searchText, filterStatus, rowOffset, true)} disabled={loadingMore}
-                  className="w-full rounded-lg border border-surface-border/60 py-2 text-xs text-slate-400 hover:border-accent/40 hover:text-accent disabled:opacity-50">
-                  {loadingMore ? "Loading…" : `Load more (${total - rows.length} remaining)`}
-                </button>
+              <div ref={sentinelRef} className="py-4 text-center text-xs text-slate-500">
+                {loadingMore ? "Loading…" : ""}
               </div>
             )}
             </>
