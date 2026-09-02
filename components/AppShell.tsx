@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { MODULE_NAV } from "@/lib/nav";
+import { useTheme } from "./ThemeProvider";
 
 // ── SVG icon set (20×20 viewBox, stroke-based) ────────────────────────────
 
@@ -145,6 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, logout } = useAuth();
   const pathname = usePathname();
+  const { theme, toggle } = useTheme();
   const allowed = user?.allowed_modules ?? [];
 
   const currentKey =
@@ -263,10 +265,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </p>
               )}
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800/40 bg-emerald-950/30 px-2.5 py-1 text-[11px] text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Connected
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggle}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-surface-border text-slate-400 transition-colors hover:border-slate-500 hover:bg-white/[0.04] hover:text-white"
+                title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {theme === "dark" ? (
+                  /* Sun icon */
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                    <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 1.78a1 1 0 011.42 1.42l-.71.7a1 1 0 11-1.41-1.41l.7-.71zM18 9a1 1 0 110 2h-1a1 1 0 110-2h1zM4.22 4.22a1 1 0 00-1.41 1.41l.7.71A1 1 0 004.93 4.93l-.71-.71zM3 10a1 1 0 100 2H2a1 1 0 100-2h1zm1.22 5.78a1 1 0 001.41 1.41l.71-.7a1 1 0 00-1.41-1.42l-.71.71zM10 17a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zm5.78-1.22a1 1 0 001.42-1.41l-.71-.71a1 1 0 00-1.41 1.42l.7.7zM10 6a4 4 0 100 8 4 4 0 000-8z"/>
+                  </svg>
+                ) : (
+                  /* Moon icon */
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                  </svg>
+                )}
+              </button>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800/40 bg-emerald-950/30 px-2.5 py-1 text-[11px] text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                Connected
+              </span>
+            </div>
           </div>
         </header>
 
