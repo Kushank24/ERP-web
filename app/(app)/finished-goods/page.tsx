@@ -430,7 +430,7 @@ export default function FinishedGoodsPage() {
   return (
     <div
       className="min-h-full space-y-6 pb-10"
-      style={{ background: "#0b0f14" }}
+      style={{ background: "var(--color-bg-base)" }}
     >
       {/* ══════════════════════════════════════════════════════════════════════
           PAGE HEADER
@@ -704,7 +704,7 @@ export default function FinishedGoodsPage() {
             </span>
             <input type="search" value={searchInput} placeholder="Search product, WO #, party…"
               onChange={e => setSearchInput(e.target.value)}
-              className="w-full rounded border border-surface-border/60 bg-[#0b0f14] py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
+              className="w-full rounded border border-surface-border/60 bg-surface-base py-1 pl-7 pr-2 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
           </div>
         </div>
 

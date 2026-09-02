@@ -180,9 +180,9 @@ function BoqTable({
   if (!lines.length) return <p className="text-xs italic text-slate-500">No BOQ lines defined.</p>;
 
   return (
-    <div className="overflow-x-auto">
+    <div className="w-full">
       <table className="w-full text-left">
-        <thead>
+        <thead className="sticky top-[62px] z-[5] bg-surface-card">
           <tr className="border-b border-surface-border">
             {["Material", "Section Size", "Units", "Qty", "Total Consumed"].map((h) => (
               <th key={h} className="pb-2 pr-6 text-[10px] font-semibold uppercase tracking-wider text-slate-500 last:pr-0">{h}</th>
@@ -401,7 +401,7 @@ function ProductCard({ product, onRefresh, materials: materialList }: {
   const boqCount = boq !== null ? boq.length : product.boq_count;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-surface-border bg-surface-card">
+    <div className="[overflow:clip] rounded-xl border border-surface-border bg-surface-card">
       {/* Header */}
       <div className="flex items-center gap-2 px-5 py-4">
         <button type="button" onClick={() => setOpen((v) => !v)}

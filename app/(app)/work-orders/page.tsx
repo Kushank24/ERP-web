@@ -622,7 +622,7 @@ export default function WorkOrdersPage() {
   return (
     <div
       className="flex h-[calc(100vh-7rem)] min-h-0 gap-5"
-      style={{ background: "#0b0f14" }}
+      style={{ background: "var(--color-bg-base)" }}
     >
       {/* ══════════════════════════════════════════════════════════════════════
           LEFT PANEL — Work Order List (40%)
