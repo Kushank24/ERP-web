@@ -11,3 +11,107 @@ body {
   color: var(--foreground);
   background: var(--background);
 }
+
+/* ── Theme tokens ─────────────────────────────────────────────────── */
+:root {
+  /* Dark theme (default) */
+  --color-bg-base: #0b0f14;
+  --color-bg-surface: #0f1419;
+  --color-bg-card: #1a2332;
+  --color-border: #2d3a4f;
+  --color-accent: #3b82f6;
+  --color-accent-muted: #64748b;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+}
+
+[data-theme="light"] {
+  --background: #f0f4f8;
+  --foreground: #0f172a;
+  --color-bg-base: #f0f4f8;
+  --color-bg-surface: #f8fafc;
+  --color-bg-card: #ffffff;
+  --color-border: #e2e8f0;
+  --color-accent: #2563eb;
+  --color-accent-muted: #94a3b8;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94a3b8;
+}
+
+/* ── Dark mode: improve column header readability ──────────────────── */
+thead th,
+thead td {
+  color: #cbd5e1; /* slate-300 — brighter than slate-500 default */
+}
+
+thead {
+  background-color: #1e2a3d; /* slightly lighter than #0f1419 so headers pop */
+}
+
+/* ── Light mode overrides for hardcoded Tailwind color classes ─────── */
+/* These handle classes that can't be converted to CSS variables easily */
+[data-theme="light"] .text-white {
+  color: var(--color-text-primary) !important;
+}
+[data-theme="light"] .text-slate-400 {
+  color: #475569 !important;
+}
+[data-theme="light"] .text-slate-500 {
+  color: #64748b !important;
+}
+[data-theme="light"] .text-slate-300 {
+  color: #334155 !important;
+}
+[data-theme="light"] .bg-\[\#0b0f14\] {
+  background-color: var(--color-bg-base) !important;
+}
+[data-theme="light"] .bg-\[\#0f1419\] {
+  background-color: var(--color-bg-surface) !important;
+}
+[data-theme="light"] .bg-\[\#1a2332\] {
+  background-color: var(--color-bg-card) !important;
+}
+[data-theme="light"] .border-\[\#2d3a4f\] {
+  border-color: var(--color-border) !important;
+}
+[data-theme="light"] .bg-white\/\[0\.04\] {
+  background-color: rgba(0,0,0,0.04) !important;
+}
+[data-theme="light"] .bg-white\/\[0\.06\] {
+  background-color: rgba(0,0,0,0.06) !important;
+}
+[data-theme="light"] .bg-white\/\[0\.08\] {
+  background-color: rgba(0,0,0,0.08) !important;
+}
+/* Backdrop header transparency (AppShell sticky header) in light mode */
+[data-theme="light"] .bg-\[\#0b0f14\]\/80 {
+  background-color: rgba(240,244,248,0.92) !important;
+}
+
+/* Table thead backgrounds — give a visible light-grey tint so column headers stand out */
+[data-theme="light"] .bg-\[\#0f1419\]\/80,
+[data-theme="light"] .bg-\[\#0f1419\]\/70,
+[data-theme="light"] .bg-\[\#0f1419\]\/60 {
+  background-color: #e8edf3 !important;
+}
+
+/* Ensure thead text is readable in light mode */
+[data-theme="light"] thead th,
+[data-theme="light"] thead td {
+  color: #1e293b !important;
+}
+
+/* Input and form field backgrounds */
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: #94a3b8 !important;
+}
