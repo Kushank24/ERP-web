@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -28,7 +29,15 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrains.variable} min-h-screen font-sans antialiased`}
       >
-        <AuthProvider>{children}</AuthProvider>
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            var t = localStorage.getItem('esafe-theme') || 'light';
+            document.documentElement.setAttribute('data-theme', t);
+          })();
+        ` }} />
+        <ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
