@@ -9,13 +9,19 @@ const config: Config = {
     extend: {
       colors: {
         surface: {
-          DEFAULT: "#0f1419",
-          card: "#1a2332",
-          border: "#2d3a4f",
+          base: "var(--color-bg-base)",
+          DEFAULT: "var(--color-bg-surface)",
+          card: "var(--color-bg-card)",
+          border: "var(--color-border)",
         },
         accent: {
-          DEFAULT: "#3b82f6",
-          muted: "#64748b",
+          DEFAULT: "var(--color-accent)",
+          muted: "var(--color-accent-muted)",
+        },
+        text: {
+          primary: "var(--color-text-primary)",
+          secondary: "var(--color-text-secondary)",
+          muted: "var(--color-text-muted)",
         },
       },
       fontFamily: {
