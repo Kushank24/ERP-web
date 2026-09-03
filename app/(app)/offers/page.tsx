@@ -151,6 +151,7 @@ export default function OffersPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
   const [productSpecs, setProductSpecs] = useState<Record<number, SpecSlot[]>>({});
   const specsLoadedRef = useRef<Set<number>>(new Set());
   const [priceHistory, setPriceHistory] = useState<Record<string, PriceHistory[]>>({});
@@ -429,14 +430,21 @@ export default function OffersPage() {
     } catch (e: unknown) { alert(e instanceof Error ? e.message : "Failed"); }
   }
 
-  async function handleDownload() {
+  async function handleDownload(variant: "normal" | "tender" = "normal") {
     if (!detail) return;
     setDownloading(true);
+    setPdfMenuOpen(false);
     try {
-      const { blob } = await apiBlob("/api/v1/offers/" + detail.id + "/pdf");
+      const { blob, filename } = await apiBlob(
+        `/api/v1/offers/${detail.id}/pdf?variant=${variant}`
+      );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = "Offer-" + detail.offer_number + ".pdf"; a.click();
+      a.href = url;
+      a.download = filename || `Offer-${detail.offer_number}${variant === "tender" ? "-Tender" : ""}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       URL.revokeObjectURL(url);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "Download failed");
@@ -914,10 +922,31 @@ export default function OffersPage() {
                             Edit
                           </button>
                         )}
-                        <button type="button" onClick={handleDownload} disabled={downloading}
-                          className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white disabled:opacity-50">
-                          {downloading ? "…" : "↓ PDF"}
-                        </button>
+                        <div className="relative">
+                          {pdfMenuOpen && (
+                            <div className="fixed inset-0 z-10" onClick={() => setPdfMenuOpen(false)} />
+                          )}
+                          <button type="button" onClick={() => setPdfMenuOpen(o => !o)} disabled={downloading}
+                            className="flex items-center gap-1.5 rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-400 hover:text-white disabled:opacity-50">
+                            {downloading ? (
+                              <><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/25 border-t-white" /> Generating…</>
+                            ) : (
+                              <>↓ PDF ▾</>
+                            )}
+                          </button>
+                          {pdfMenuOpen && !downloading && (
+                            <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-lg border border-surface-border bg-[#0f1419] py-1 shadow-xl">
+                              <button type="button" onClick={() => handleDownload("normal")}
+                                className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:bg-surface-border/40 hover:text-white">
+                                Normal Offer
+                              </button>
+                              <button type="button" onClick={() => handleDownload("tender")}
+                                className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:bg-surface-border/40 hover:text-white">
+                                Tender Offer
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
