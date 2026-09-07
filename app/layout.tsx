@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
@@ -38,6 +39,7 @@ export default function RootLayout({
         <ThemeProvider>
           <AuthProvider>{children}</AuthProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );

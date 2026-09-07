@@ -19,6 +19,7 @@
     "@tiptap/pm": "^3.30.5",
     "@tiptap/react": "^3.30.5",
     "@tiptap/starter-kit": "^3.30.5",
+    "@vercel/analytics": "^2.0.1",
     "next": "14.2.18",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
