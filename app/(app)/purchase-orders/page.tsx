@@ -101,7 +101,7 @@ const STATUS_MAP: Record<number, { label: string; classes: string }> = {
   },
 };
 
-const UNITS = ["Nos", "Kg", "Meter", "Set"] as const;
+const UNITS = ["Nos", "Kg", "Meter", "Feet", "Sq. Meter", "Set"] as const;
 
 const BLANK_LINE: DraftLine = {
   lineId: null,
