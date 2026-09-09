@@ -23,6 +23,7 @@ interface OfferItem {
 interface OfferRow {
   id: number; offer_number: string; company_name: string | null; enquiry_number: string | null;
   offer_date: string; valid_until: string | null; status: string; total_amount: number; currency: string;
+  call_status: boolean; called_at: string | null;
 }
 interface OfferDetail extends OfferRow {
   company_id: number | null; enquiry_id: number | null;
@@ -107,6 +108,23 @@ function StatusBadge({ status, offerDate }: { status: string; offerDate?: string
   }
   return <span className={"inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide " + cls}>{label}</span>;
 }
+function CallCheckbox({ row, onToggle }: { row: OfferRow; onToggle: (e: React.MouseEvent, id: number) => void }) {
+  const ageDays = Math.floor((Date.now() - new Date(row.offer_date).getTime()) / 86_400_000);
+  const needsCall = row.status === "sent" && ageDays >= 1 && ageDays <= 15;
+  if (!needsCall && !row.call_status) return <span />;
+  return (
+    <span className="flex items-center justify-center" title={row.call_status ? "Called" : "Mark as called"}>
+      <input
+        type="checkbox"
+        checked={row.call_status}
+        onClick={e => onToggle(e, row.id)}
+        onChange={() => {}}
+        className="h-3.5 w-3.5 cursor-pointer accent-emerald-500"
+      />
+    </span>
+  );
+}
+
 function Skeleton({ className = "" }: { className?: string }) {
   return <div className={"animate-pulse rounded bg-surface-border/40 " + className} />;
 }
@@ -451,6 +469,19 @@ export default function OffersPage() {
     } finally { setDownloading(false); }
   }
 
+  async function handleCallStatus(e: React.MouseEvent, offerId: number) {
+    e.stopPropagation();
+    // Optimistic: flip immediately so the UI responds at once
+    const prev = rows.find(r => r.id === offerId)?.call_status ?? false;
+    setRows(curr => curr.map(r => r.id === offerId ? { ...r, call_status: !prev } : r));
+    try {
+      await api<{ call_status: boolean }>(`/api/v1/offers/${offerId}/call-status`, { method: "PATCH" });
+    } catch {
+      // Revert on failure
+      setRows(curr => curr.map(r => r.id === offerId ? { ...r, call_status: prev } : r));
+    }
+  }
+
   async function handleDelete() {
     if (!detail) return;
     if (!confirm("Delete offer " + detail.offer_number + "?")) return;
@@ -535,12 +566,13 @@ export default function OffersPage() {
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto] gap-2 text-[10px] font-semibold uppercase tracking-wider">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto_3.5rem] gap-2 text-[10px] font-semibold uppercase tracking-wider">
             <SortHeader label="Offer #" colKey="offer_number" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
             <SortHeader label="Company" colKey="company_name" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
             <SortHeader label="Date" colKey="offer_date" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
             <SortHeader label="Amount" colKey="total_amount" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} className="justify-end" />
             <SortHeader label="Status" colKey="status" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
+            <span className="flex items-center justify-center text-slate-500" title="Called?">Called</span>
           </div>
         </div>
 
@@ -569,12 +601,13 @@ export default function OffersPage() {
                   <li key={row.id}>
                     <button type="button" onClick={() => handleRowClick(row.id)}
                       className={"w-full border-b border-surface-border/30 px-4 py-3 text-left last:border-b-0 transition-colors " + (isActive ? "border-l-2 border-l-accent bg-accent/10" : "hover:bg-white/[0.025]")}>
-                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto] items-center gap-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto_3.5rem] items-center gap-2">
                         <span className={"truncate text-xs font-semibold " + (isActive ? "text-accent" : "text-white")}>{row.offer_number}</span>
                         <span className="truncate text-xs text-slate-400">{row.company_name || "—"}</span>
                         <span className="text-xs text-slate-400">{fmtDate(row.offer_date)}</span>
                         <span className="text-right font-mono text-xs text-slate-300">{fmt(row.total_amount)}</span>
                         <StatusBadge status={row.status} offerDate={row.offer_date} />
+                        <CallCheckbox row={row} onToggle={handleCallStatus} />
                       </div>
                       {row.enquiry_number && (
                         <div className="mt-1 text-[10px] text-slate-600">{row.enquiry_number}</div>
