@@ -14,7 +14,10 @@ type SORow = {
   invoice_number: string;
   company_name: string | null;
   total_amount: number;
+  /** @deprecated conflated column — kept only for old rows. Use payment_status. */
   status: number;
+  payment_status: number | null;
+  dispatch_status: number;
   sales_date: string | null;
   payment_received?: boolean;
   payment_amount: number | null;
@@ -44,7 +47,10 @@ type SODetail = {
   delivery_date: string | null;
   gst_rate: number;
   notes: string | null;
+  /** @deprecated conflated column — kept only for old rows. Use payment_status. */
   status: number;
+  payment_status: number | null;
+  dispatch_status: number;
   payment_received: boolean;
   payment_amount: number | null;
   total_amount: number;
@@ -109,9 +115,9 @@ const BLANK_LINE: DraftLine = {
 // Inline helper components
 // ─────────────────────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: number }) {
-  const s = STATUS_MAP[status] ?? {
-    label: "N/A",
+function StatusBadge({ status }: { status: number | null }) {
+  const s = (status == null ? undefined : STATUS_MAP[status]) ?? {
+    label: "Not recorded",
     classes: "bg-slate-500/15 text-slate-400 border-slate-500/30",
   };
   return (
@@ -329,7 +335,7 @@ export default function SalesOrdersPage() {
     api<SODetail>(`/api/v1/sales-orders/${id}`)
       .then((data) => {
         setDetail(data);
-        setPartialAmountInput(data.status === 2 && data.payment_amount != null ? String(data.payment_amount) : "");
+        setPartialAmountInput(data.payment_status === 2 && data.payment_amount != null ? String(data.payment_amount) : "");
         setAcItems(data.additional_costs ?? []);
         setAcDirty(false);
         setDetailLoading(false);
@@ -451,7 +457,7 @@ export default function SalesOrdersPage() {
   const preFiltered = rows.filter((r) => {
     if (colFilters.invoice && !r.invoice_number.toLowerCase().includes(colFilters.invoice.toLowerCase())) return false;
     if (colFilters.company && !(r.company_name ?? "").toLowerCase().includes(colFilters.company.toLowerCase())) return false;
-    if (colFilters.status && r.status !== parseInt(colFilters.status)) return false;
+    if (colFilters.status && r.payment_status !== parseInt(colFilters.status)) return false;
     return true;
   });
   const { sorted: filteredRows, sortKey: soSortKey, sortDir: soSortDir, toggleSort: toggleSOSort } =
@@ -471,10 +477,12 @@ export default function SalesOrdersPage() {
         json: { payment_status: paymentStatus, payment_amount: amt },
       });
       setDetail(updated);
-      setPartialAmountInput(updated.status === 2 && updated.payment_amount != null ? String(updated.payment_amount) : "");
+      setPartialAmountInput(updated.payment_status === 2 && updated.payment_amount != null ? String(updated.payment_amount) : "");
       setRows((prev) =>
         prev.map((r) =>
-          r.id === updated.id ? { ...r, status: updated.status, payment_amount: updated.payment_amount } : r,
+          r.id === updated.id
+            ? { ...r, status: updated.status, payment_status: updated.payment_status, dispatch_status: updated.dispatch_status, payment_amount: updated.payment_amount }
+            : r,
         ),
       );
     } catch (err) {
@@ -719,8 +727,8 @@ export default function SalesOrdersPage() {
                           {fmt(row.total_amount)}
                         </span>
                         <div className="flex flex-col items-start gap-0.5">
-                          <StatusBadge status={row.status} />
-                          {row.status === 2 && row.payment_amount != null && (
+                          <StatusBadge status={row.payment_status} />
+                          {row.payment_status === 2 && row.payment_amount != null && (
                             <span className="text-[9px] text-amber-400/80 font-mono">{fmt(row.payment_amount)} recd.</span>
                           )}
                         </div>
@@ -1187,16 +1195,16 @@ export default function SalesOrdersPage() {
                           disabled={paymentLoading}
                           onClick={() => handlePaymentUpdate(opt.value)}
                           className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                            detail.status === opt.value
+                            detail.payment_status === opt.value
                               ? opt.activeClass
                               : "border-surface-border text-slate-500 hover:border-slate-500 hover:text-slate-300"
                           }`}
                         >
-                          {detail.status === opt.value && "✓ "}{opt.label}
+                          {detail.payment_status === opt.value && "✓ "}{opt.label}
                         </button>
                       ))}
                     </div>
-                    {detail.status === 2 && (() => {
+                    {detail.payment_status === 2 && (() => {
                       const parsed = parseFloat(partialAmountInput);
                       const exceedsTotal = !isNaN(parsed) && parsed > detail.total_amount;
                       return (
