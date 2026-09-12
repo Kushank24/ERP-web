@@ -220,6 +220,7 @@ export default function OffersPage() {
           product_id: i.product_id ?? null,
           description: i.product_name || "",
           quantity: i.quantity,
+          unit: "PC",
           unit_price: 0,
           specs: [] as SpecValue[],
         }));
