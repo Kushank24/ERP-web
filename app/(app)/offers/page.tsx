@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, useTransition, memo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { api, apiBlob } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
@@ -137,13 +137,44 @@ function ErrorAlert({ message }: { message: string }) {
   );
 }
 
+const OfferListRow = memo(function OfferListRow({
+  row, isActive, onRowClick, onCallToggle,
+}: {
+  row: OfferRow;
+  isActive: boolean;
+  onRowClick: (id: number) => void;
+  onCallToggle: (e: React.MouseEvent, id: number) => void;
+}) {
+  return (
+    <li>
+      <button type="button" onClick={() => onRowClick(row.id)}
+        className={"w-full border-b border-surface-border/30 px-4 py-3 text-left last:border-b-0 transition-colors " + (isActive ? "border-l-2 border-l-accent bg-accent/10" : "hover:bg-white/[0.025]")}>
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto_3.5rem] items-center gap-2">
+          <span className={"truncate text-xs font-semibold " + (isActive ? "text-accent" : "text-white")}>{row.offer_number}</span>
+          <span className="truncate text-xs text-slate-400">{row.company_name || "—"}</span>
+          <span className="text-xs text-slate-400">{fmtDate(row.offer_date)}</span>
+          <span className="text-right font-mono text-xs text-slate-300">{fmt(row.total_amount)}</span>
+          <StatusBadge status={row.status} offerDate={row.offer_date} />
+          <CallCheckbox row={row} onToggle={onCallToggle} />
+        </div>
+        {row.enquiry_number && (
+          <div className="mt-1 text-[10px] text-slate-600">{row.enquiry_number}</div>
+        )}
+      </button>
+    </li>
+  );
+});
+
 const PAGE_SIZE = 50;
 
 export default function OffersPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  const [, startTransition] = useTransition();
   const [rows, setRows] = useState<OfferRow[]>([]);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const [total, setTotal] = useState(0);
   const [rowOffset, setRowOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -287,9 +318,11 @@ export default function OffersPage() {
       .catch((e: Error) => { setDetailError(e.message); setDetailLoading(false); });
   }, []);
 
-  function handleRowClick(id: number) {
-    setSelectedId(id); setShowForm(false); setSaveError(null); loadDetail(id);
-  }
+  const handleRowClick = useCallback((id: number) => {
+    setSelectedId(id);
+    startTransition(() => { setShowForm(false); setSaveError(null); });
+    loadDetail(id);
+  }, [loadDetail, startTransition]);
 
   function suggestOfferNumber() {
     const year = new Date().getFullYear();
@@ -391,11 +424,11 @@ export default function OffersPage() {
     setForm(f => ({ ...f, items: f.items.map((it, i) => i === idx ? { ...it, [field]: value } : it) }));
   }
 
-  function calcTotals() {
-    const subtotal = form.items.reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
-    const packing = subtotal * (Number(form.packing_charges_pct) / 100);
-    const assessable = subtotal + packing + Number(form.freight_charges);
-    const gst = assessable * (Number(form.gst_pct) / 100);
+  function calcTotals(items: DraftItem[], packingPct: number, freight: number, gstPct: number) {
+    const subtotal = items.reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
+    const packing = subtotal * (packingPct / 100);
+    const assessable = subtotal + packing + freight;
+    const gst = assessable * (gstPct / 100);
     return { subtotal, total: assessable + gst };
   }
 
@@ -444,11 +477,21 @@ export default function OffersPage() {
   async function handleStatusChange(newStatus: string) {
     if (!detail) return;
     if (!confirm("Mark offer " + detail.offer_number + " as \"" + newStatus + "\"?")) return;
+    const detailId = detail.id;
+    const prevStatus = detail.status;
+    // Optimistic: update UI immediately
+    setDetail(d => d && d.id === detailId ? { ...d, status: newStatus } : d);
+    setRows(prev => prev.map(r => r.id === detailId ? { ...r, status: newStatus } : r));
     try {
-      const updated = await api<OfferDetail>("/api/v1/offers/" + detail.id + "/status", { method: "PATCH", json: { status: newStatus } });
+      const updated = await api<OfferDetail>("/api/v1/offers/" + detailId + "/status", { method: "PATCH", json: { status: newStatus } });
       setDetail(updated);
       setRows(prev => prev.map(r => r.id === updated.id ? { ...r, status: updated.status } : r));
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Failed"); }
+    } catch (e: unknown) {
+      // Revert on failure
+      setDetail(d => d && d.id === detailId ? { ...d, status: prevStatus } : d);
+      setRows(prev => prev.map(r => r.id === detailId ? { ...r, status: prevStatus } : r));
+      alert(e instanceof Error ? e.message : "Failed");
+    }
   }
 
   async function handleDownload(variant: "normal" | "tender" = "normal") {
@@ -484,18 +527,16 @@ export default function OffersPage() {
     }
   }
 
-  async function handleCallStatus(e: React.MouseEvent, offerId: number) {
+  const handleCallStatus = useCallback(async (e: React.MouseEvent, offerId: number) => {
     e.stopPropagation();
-    // Optimistic: flip immediately so the UI responds at once
-    const prev = rows.find(r => r.id === offerId)?.call_status ?? false;
+    const prev = rowsRef.current.find(r => r.id === offerId)?.call_status ?? false;
     setRows(curr => curr.map(r => r.id === offerId ? { ...r, call_status: !prev } : r));
     try {
       await api<{ call_status: boolean }>(`/api/v1/offers/${offerId}/call-status`, { method: "PATCH" });
     } catch {
-      // Revert on failure
       setRows(curr => curr.map(r => r.id === offerId ? { ...r, call_status: prev } : r));
     }
-  }
+  }, []);
 
   async function handleDelete() {
     if (!detail) return;
@@ -526,7 +567,10 @@ export default function OffersPage() {
     return () => obs.disconnect();
   }, [hasMore, loadingMore, fetchPage, searchText, filterStatus, rowOffset]);
 
-  const { subtotal: fSubtotal, total: fTotal } = calcTotals();
+  const { subtotal: fSubtotal, total: fTotal } = useMemo(
+    () => calcTotals(form.items, Number(form.packing_charges_pct), Number(form.freight_charges), Number(form.gst_pct)),
+    [form.items, form.packing_charges_pct, form.freight_charges, form.gst_pct]
+  );
 
   return (
     <div className="flex h-[calc(100vh-7rem)] min-h-0 gap-5">
@@ -610,27 +654,15 @@ export default function OffersPage() {
           ) : (
             <>
             <ul>
-              {filteredRows.map(row => {
-                const isActive = row.id === selectedId;
-                return (
-                  <li key={row.id}>
-                    <button type="button" onClick={() => handleRowClick(row.id)}
-                      className={"w-full border-b border-surface-border/30 px-4 py-3 text-left last:border-b-0 transition-colors " + (isActive ? "border-l-2 border-l-accent bg-accent/10" : "hover:bg-white/[0.025]")}>
-                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto_3.5rem] items-center gap-2">
-                        <span className={"truncate text-xs font-semibold " + (isActive ? "text-accent" : "text-white")}>{row.offer_number}</span>
-                        <span className="truncate text-xs text-slate-400">{row.company_name || "—"}</span>
-                        <span className="text-xs text-slate-400">{fmtDate(row.offer_date)}</span>
-                        <span className="text-right font-mono text-xs text-slate-300">{fmt(row.total_amount)}</span>
-                        <StatusBadge status={row.status} offerDate={row.offer_date} />
-                        <CallCheckbox row={row} onToggle={handleCallStatus} />
-                      </div>
-                      {row.enquiry_number && (
-                        <div className="mt-1 text-[10px] text-slate-600">{row.enquiry_number}</div>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
+              {filteredRows.map(row => (
+                <OfferListRow
+                  key={row.id}
+                  row={row}
+                  isActive={row.id === selectedId}
+                  onRowClick={handleRowClick}
+                  onCallToggle={handleCallStatus}
+                />
+              ))}
             </ul>
             {hasMore && (
               <div ref={sentinelRef} className="py-4 text-center text-xs text-slate-500">

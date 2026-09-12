@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState, useMemo, useTransition } from "react";
 import { api, apiBlob } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -766,6 +766,7 @@ export default function ProductsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [, startTransition] = useTransition();
 
   // Debounce search to avoid a request per keystroke
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -811,18 +812,18 @@ export default function ProductsPage() {
   }, []);
 
   // Client-side filter on the current page when a search is active (already filtered server-side)
-  const grouped = products.reduce<Map<string, ProductSummary[]>>((acc, p) => {
+  const grouped = useMemo(() => products.reduce<Map<string, ProductSummary[]>>((acc, p) => {
     const cat = p.category?.trim() || UNCATEGORIZED;
     if (!acc.has(cat)) acc.set(cat, []);
     acc.get(cat)!.push(p);
     return acc;
-  }, new Map());
+  }, new Map()), [products]);
 
-  const sortedGroups = Array.from(grouped.entries()).sort(([a], [b]) => {
+  const sortedGroups = useMemo(() => Array.from(grouped.entries()).sort(([a], [b]) => {
     if (a === UNCATEGORIZED) return 1;
     if (b === UNCATEGORIZED) return -1;
     return a.localeCompare(b);
-  });
+  }), [grouped]);
 
   const showGroupHeaders = activeCat === null && sortedGroups.length > 1;
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -910,12 +911,12 @@ export default function ProductsPage() {
         <div className="flex flex-wrap items-center gap-3">
           {allCategories.length > 1 && (
             <div className="flex flex-wrap gap-1.5">
-              <button type="button" onClick={() => setActiveCat(null)}
+              <button type="button" onClick={() => startTransition(() => setActiveCat(null))}
                 className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${activeCat === null ? "border-accent bg-accent/20 text-accent" : "border-surface-border bg-transparent text-slate-400 hover:border-slate-600 hover:text-slate-300"}`}>
                 All
               </button>
               {allCategories.map((cat) => (
-                <button key={cat || "__unc"} type="button" onClick={() => setActiveCat((c) => (c === cat ? null : cat))}
+                <button key={cat || "__unc"} type="button" onClick={() => startTransition(() => setActiveCat((c) => (c === cat ? null : cat)))}
                   className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${activeCat === cat ? "border-accent bg-accent/20 text-accent" : "border-surface-border bg-transparent text-slate-400 hover:border-slate-600 hover:text-slate-300"}`}>
                   {cat || "Uncategorized"}
                 </button>
