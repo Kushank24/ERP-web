@@ -17,7 +17,8 @@ interface SpecValue { specification_id: number; value: string; }
 interface PriceHistory { offer_number: string; offer_date: string; status: string; unit_price: number; quantity: number; }
 interface OfferItem {
   id?: number; product_id?: number | null; description: string;
-  quantity: number; unit_price: number; total_price?: number;
+  quantity: number; unit: string; unit_price: number; total_price?: number;
+  accepted?: boolean;
   specifications?: Array<{ specification_id: number; value: string; spec_name: string; }>;
 }
 interface OfferRow {
@@ -35,8 +36,9 @@ interface OfferDetail extends OfferRow {
   items: OfferItem[];
 }
 
-type DraftItem = { product_id: number | null; description: string; quantity: number; unit_price: number; specs: SpecValue[]; };
-const BLANK_ITEM: DraftItem = { product_id: null, description: "", quantity: 1, unit_price: 0, specs: [] };
+type DraftItem = { product_id: number | null; description: string; quantity: number; unit: string; unit_price: number; specs: SpecValue[]; };
+const BLANK_ITEM: DraftItem = { product_id: null, description: "", quantity: 1, unit: "PC", unit_price: 0, specs: [] };
+const OFFER_UNITS = ["PC", "SET", "MTR"] as const;
 const BLANK_FORM = {
   company_id: "" as string | number, enquiry_id: "" as string | number,
   offer_number: "", offer_date: new Date().toISOString().slice(0, 10),
@@ -89,6 +91,7 @@ const STATUS_COLORS: Record<string, string> = {
   draft: "bg-slate-500/20 text-slate-400 border-slate-500/30",
   sent: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   accepted: "bg-green-500/20 text-green-400 border-green-500/30",
+  partial: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   rejected: "bg-red-500/20 text-red-400 border-red-500/30",
   expired: "bg-orange-500/20 text-orange-400 border-orange-500/30",
 };
@@ -109,9 +112,6 @@ function StatusBadge({ status, offerDate }: { status: string; offerDate?: string
   return <span className={"inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide " + cls}>{label}</span>;
 }
 function CallCheckbox({ row, onToggle }: { row: OfferRow; onToggle: (e: React.MouseEvent, id: number) => void }) {
-  const ageDays = Math.floor((Date.now() - new Date(row.offer_date).getTime()) / 86_400_000);
-  const needsCall = row.status === "sent" && ageDays >= 1 && ageDays <= 15;
-  if (!needsCall && !row.call_status) return <span />;
   return (
     <span className="flex items-center justify-center" title={row.call_status ? "Called" : "Mark as called"}>
       <input
@@ -220,6 +220,7 @@ export default function OffersPage() {
           product_id: i.product_id ?? null,
           description: i.product_name || "",
           quantity: i.quantity,
+          unit: "PC",
           unit_price: 0,
           specs: [] as SpecValue[],
         }));
@@ -319,6 +320,7 @@ export default function OffersPage() {
         product_id: i.product_id ?? null,
         description: i.description,
         quantity: i.quantity,
+        unit: i.unit || "PC",
         unit_price: Number(i.unit_price),
         specs: (i.specifications ?? []).map(s => ({ specification_id: s.specification_id, value: s.value })),
       })),
@@ -418,6 +420,7 @@ export default function OffersPage() {
           product_id: i.product_id || null,
           description: i.description,
           quantity: Number(i.quantity),
+          unit: i.unit || "PC",
           unit_price: Number(i.unit_price),
           specifications: i.specs.filter(s => s.value.trim()).map(s => ({
             specification_id: s.specification_id,
@@ -467,6 +470,18 @@ export default function OffersPage() {
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "Download failed");
     } finally { setDownloading(false); }
+  }
+
+  async function handleItemAccepted(itemId: number, currentVal: boolean) {
+    if (!detail) return;
+    // Optimistic: flip immediately
+    setDetail(d => d ? { ...d, items: d.items.map(it => it.id === itemId ? { ...it, accepted: !currentVal } : it) } : d);
+    try {
+      await api(`/api/v1/offers/${detail.id}/items/${itemId}/accepted`, { method: "PATCH" });
+    } catch {
+      // Revert on failure
+      setDetail(d => d ? { ...d, items: d.items.map(it => it.id === itemId ? { ...it, accepted: currentVal } : it) } : d);
+    }
   }
 
   async function handleCallStatus(e: React.MouseEvent, offerId: number) {
@@ -540,9 +555,9 @@ export default function OffersPage() {
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2 space-y-1.5">
           <div className="flex gap-2">
             <input type="search" placeholder="Search…" value={searchInput} onChange={e => setSearchInput(e.target.value)}
-              className="flex-1 rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none focus:border-accent/50" />
+              className="flex-1 rounded border border-surface-border/60 bg-surface-base px-2 py-1 text-[11px] text-text-primary placeholder-slate-400 outline-none focus:border-accent/50" />
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-              className="rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-slate-300 outline-none focus:border-accent/50">
+              className="rounded border border-surface-border/60 bg-surface-base px-2 py-1 text-[11px] text-text-primary outline-none focus:border-accent/50">
               <option value="">All</option>
               <option value="draft">Draft</option>
               <option value="sent">Open</option>
@@ -554,10 +569,10 @@ export default function OffersPage() {
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-slate-500">Date:</span>
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none focus:border-accent/50 [color-scheme:dark]" />
+              className="cursor-pointer rounded border border-surface-border/60 bg-surface-base px-2 py-0.5 text-[11px] text-text-primary outline-none focus:border-accent/50" />
             <span className="text-[10px] text-slate-600">–</span>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="cursor-pointer rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-0.5 text-[11px] text-slate-300 outline-none focus:border-accent/50 [color-scheme:dark]" />
+              className="cursor-pointer rounded border border-surface-border/60 bg-surface-base px-2 py-0.5 text-[11px] text-text-primary outline-none focus:border-accent/50" />
             {(dateFrom || dateTo) && (
               <button type="button" onClick={() => { setDateFrom(""); setDateTo(""); }}
                 className="text-[10px] text-slate-500 hover:text-white">✕ Clear</button>
@@ -652,53 +667,53 @@ export default function OffersPage() {
                 {saveError && <ErrorAlert message={saveError} />}
 
                 <section>
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Offer Details</p>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Offer Details</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Offer Number *</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Offer Number *</label>
                       <input value={form.offer_number} onChange={e => setForm(f => ({ ...f, offer_number: e.target.value }))} required
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Offer Date</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Offer Date</label>
                       <input type="date" value={form.offer_date} onChange={e => setForm(f => ({ ...f, offer_date: e.target.value }))}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white [color-scheme:dark] outline-none focus:border-accent/70" />
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Valid Until</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Valid Until</label>
                       <input type="date" value={form.valid_until} onChange={e => setForm(f => ({ ...f, valid_until: e.target.value }))}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white [color-scheme:dark] outline-none focus:border-accent/70" />
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Currency</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Currency</label>
                       <select value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70">
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70">
                         <option value="INR">INR (₹)</option>
                         <option value="USD">USD ($)</option>
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Company</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Company</label>
                       <select value={form.company_id} onChange={e => {
                         const cid = e.target.value;
                         const co = companies.find(c => String(c.id) === cid);
                         setForm(f => ({ ...f, company_id: cid, kind_attn: f.kind_attn || (co?.contact_person ?? "") }));
                       }}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70">
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70">
                         <option value="">— None —</option>
                         {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Kind Attn</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Kind Attn</label>
                       <input value={form.kind_attn} onChange={e => setForm(f => ({ ...f, kind_attn: e.target.value }))}
                         placeholder="Contact person name"
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Linked Enquiry</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Linked Enquiry</label>
                       <select value={form.enquiry_id} onChange={e => setForm(f => ({ ...f, enquiry_id: e.target.value }))}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70">
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70">
                         <option value="">— None —</option>
                         {enquiries.map(eq => <option key={eq.id} value={eq.id}>{eq.enquiry_number}</option>)}
                       </select>
@@ -707,28 +722,28 @@ export default function OffersPage() {
                 </section>
 
                 <section>
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Charges</p>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Charges</p>
                   <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Packing (%)</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Packing (%)</label>
                       <input type="number" step="0.01" min="0" value={form.packing_charges_pct}
                         onFocus={e => e.target.select()}
                         onChange={e => setForm(f => ({ ...f, packing_charges_pct: Number(e.target.value) }))}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">Freight (₹)</label>
+                      <label className="mb-1 block text-xs text-text-secondary">Freight (₹)</label>
                       <input type="number" step="0.01" min="0" value={form.freight_charges}
                         onFocus={e => e.target.select()}
                         onChange={e => setForm(f => ({ ...f, freight_charges: Number(e.target.value) }))}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-400">GST (%)</label>
+                      <label className="mb-1 block text-xs text-text-secondary">GST (%)</label>
                       <input type="number" step="0.01" min="0" value={form.gst_pct}
                         onFocus={e => e.target.select()}
                         onChange={e => setForm(f => ({ ...f, gst_pct: Number(e.target.value) }))}
-                        className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                        className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70" />
                     </div>
                   </div>
                 </section>
@@ -745,8 +760,8 @@ export default function OffersPage() {
                   </div>
                   {form.items.length > 0 && (
                     <>
-                      <div className="grid grid-cols-[1fr_5rem_7rem_auto] gap-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-                        <span>Product / Description</span><span>Qty</span><span>Unit Price</span><span />
+                      <div className="grid grid-cols-[1fr_4rem_4.5rem_7rem_auto] gap-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                        <span>Product / Description</span><span>Qty</span><span>Unit</span><span>Unit Price</span><span />
                       </div>
                       <div className="space-y-2">
                         {form.items.map((it, idx) => {
@@ -755,18 +770,22 @@ export default function OffersPage() {
                           const phKey = form.company_id && it.product_id ? `${form.company_id}_${it.product_id}` : null;
                           const history = phKey ? priceHistory[phKey] : undefined;
                           return (
-                            <div key={idx} className="rounded-lg border border-surface-border/60 bg-[#0f1419] p-2.5">
-                              <div className="grid grid-cols-[1fr_5rem_7rem_auto] items-center gap-2">
+                            <div key={idx} className="rounded-lg border border-surface-border bg-surface-card p-2.5">
+                              <div className="grid grid-cols-[1fr_4rem_4.5rem_7rem_auto] items-center gap-2">
                                 <ProductCombobox
                                   value={it.product_id ? { id: it.product_id, name: it.description } : null}
                                   onSelect={p => handleProductSelect(idx, p)}
                                   hasSpecs
                                 />
                                 <input type="number" min={1} value={it.quantity} onFocus={e => e.target.select()} onChange={e => updateItem(idx, "quantity", Number(e.target.value))}
-                                  className="rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-white outline-none hover:border-surface-border focus:border-accent/60 focus:bg-[#0b0f14]" />
+                                  className="rounded border border-surface-border bg-surface-base px-2 py-1.5 text-xs text-text-primary outline-none focus:border-accent/60" placeholder="Qty" />
+                                <select value={it.unit || "PC"} onChange={e => updateItem(idx, "unit", e.target.value)}
+                                  className="rounded border border-surface-border bg-surface-base px-1.5 py-1.5 text-xs text-text-primary outline-none focus:border-accent/60">
+                                  {OFFER_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
                                 <input type="number" step="0.01" min={0} value={it.unit_price} onFocus={e => e.target.select()} onChange={e => updateItem(idx, "unit_price", Number(e.target.value))}
-                                  className="rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-white outline-none hover:border-surface-border focus:border-accent/60 focus:bg-[#0b0f14]" />
-                                <button type="button" onClick={() => removeItem(idx)} className="rounded p-1 text-slate-600 hover:text-red-400">✕</button>
+                                  className="rounded border border-surface-border bg-surface-base px-2 py-1.5 text-xs text-text-primary outline-none focus:border-accent/60" placeholder="Unit Price" />
+                                <button type="button" onClick={() => removeItem(idx)} className="rounded p-1 text-slate-400 hover:text-red-400">✕</button>
                               </div>
                               {/* Price history for this company + product */}
                               {history && history.length > 0 && (
@@ -790,19 +809,19 @@ export default function OffersPage() {
                               )}
 
                               <input value={it.description} onChange={e => updateItem(idx, "description", e.target.value)} placeholder="Description *"
-                                className="mt-1.5 w-full rounded border border-surface-border/50 bg-[#0b0f14] px-2 py-1.5 text-xs text-white placeholder-slate-600 outline-none focus:border-accent/60" />
+                                className="mt-1.5 w-full rounded border border-surface-border bg-surface-base px-2 py-1.5 text-xs text-text-primary placeholder-slate-400 outline-none focus:border-accent/60" />
 
                               {slots && slots.length > 0 && (
-                                <div className="mt-2 rounded border border-surface-border/40 bg-[#0b0f14]/60 p-2">
-                                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">Specifications</p>
+                                <div className="mt-2 rounded border border-surface-border bg-surface-base p-2">
+                                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-secondary">Specifications</p>
                                   <div className="grid grid-cols-2 gap-1.5">
                                     {slots.map(slot => (
                                       <label key={slot.specification_id} className="flex flex-col gap-0.5">
-                                        <span className="truncate text-[10px] text-slate-500" title={slot.spec_name}>{slot.spec_name}</span>
+                                        <span className="truncate text-[10px] text-text-secondary" title={slot.spec_name}>{slot.spec_name}</span>
                                         <input
                                           value={it.specs.find(s => s.specification_id === slot.specification_id)?.value ?? ""}
                                           onChange={e => updateSpec(idx, slot.specification_id, e.target.value)}
-                                          className="rounded border border-surface-border/50 bg-[#0f1419] px-2 py-1 text-[11px] text-white placeholder-slate-700 outline-none focus:border-accent/60" />
+                                          className="rounded border border-surface-border bg-surface-card px-2 py-1 text-[11px] text-text-primary outline-none focus:border-accent/60" />
                                       </label>
                                     ))}
                                   </div>
@@ -814,10 +833,10 @@ export default function OffersPage() {
                           );
                         })}
                       </div>
-                      <div className="mt-3 space-y-1.5 rounded-lg border border-surface-border bg-[#0f1419] p-3">
-                        <div className="flex justify-between text-sm text-slate-400"><span>Subtotal</span><span className="font-mono">{fmt(fSubtotal)}</span></div>
-                        <div className="flex justify-between text-sm text-slate-400"><span>GST ({form.gst_pct}%)</span><span className="font-mono">{fmt(fTotal - fSubtotal)}</span></div>
-                        <div className="flex justify-between border-t border-surface-border pt-2 text-base font-semibold text-white">
+                      <div className="mt-3 space-y-1.5 rounded-lg border border-surface-border bg-surface-card p-3">
+                        <div className="flex justify-between text-sm text-text-secondary"><span>Subtotal</span><span className="font-mono">{fmt(fSubtotal)}</span></div>
+                        <div className="flex justify-between text-sm text-text-secondary"><span>GST ({form.gst_pct}%)</span><span className="font-mono">{fmt(fTotal - fSubtotal)}</span></div>
+                        <div className="flex justify-between border-t border-surface-border pt-2 text-base font-semibold text-text-primary">
                           <span>Total</span><span className="font-mono text-accent">{fmt(fTotal)}</span>
                         </div>
                       </div>
@@ -830,50 +849,50 @@ export default function OffersPage() {
                   <div className="overflow-hidden rounded-lg border border-surface-border">
                     {/* Row: Rates Quoted above are */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Rates Quoted above are</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">Rates Quoted above are</span>
                       <select value={form.rates_quoted} onChange={e => setForm(f => ({ ...f, rates_quoted: e.target.value }))}
-                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5">
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-text-primary outline-none focus:bg-accent/5">
                         {["Ex-works", "FOR Destination", "Paid Upto Transport Godown"].map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
                     {/* Row: Packing Charges — derived from Pricing section */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Packing Charges</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">Packing Charges</span>
                       <span className="flex-1 px-3 py-2.5 text-xs text-slate-300">{form.packing_charges_pct}%</span>
                     </div>
                     {/* Row: GST Extra — derived from Pricing section */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">GST Extra</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">GST Extra</span>
                       <span className="flex-1 px-3 py-2.5 text-xs text-slate-300">{form.gst_pct}%</span>
                     </div>
                     {/* Row: Transportation */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Transportation</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">Transportation</span>
                       <select value={form.transportation} onChange={e => setForm(f => ({ ...f, transportation: e.target.value }))}
-                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5">
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-text-primary outline-none focus:bg-accent/5">
                         {["Extra to be paid by Buyer", "Paid by E-safe Enterprises"].map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
                     {/* Row: Delivery */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Delivery</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">Delivery</span>
                       <input type="text" value={form.delivery_terms} onChange={e => setForm(f => ({ ...f, delivery_terms: e.target.value }))}
-                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5" />
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-text-primary outline-none focus:bg-accent/5" />
                     </div>
                     {/* Row: Payment */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Payment</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">Payment</span>
                       <input type="text" value={form.payment_terms} onChange={e => setForm(f => ({ ...f, payment_terms: e.target.value }))}
-                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5" />
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-text-primary outline-none focus:bg-accent/5" />
                     </div>
                     {/* Row: Freight Charges — derived from Pricing section */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Freight Charges</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">Freight Charges</span>
                       <span className="flex-1 px-3 py-2.5 text-xs text-slate-300">Rs. {Number(form.freight_charges).toFixed(2)}</span>
                     </div>
                     {/* Row: Validity of Our Offer — derived from valid_until */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Validity of Our Offer</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">Validity of Our Offer</span>
                       <span className="flex-1 px-3 py-2.5 text-xs text-slate-300">{form.valid_until || "As per mutual agreement"}</span>
                     </div>
                     {/* Fixed read-only rows */}
@@ -882,29 +901,29 @@ export default function OffersPage() {
                       { label: "Our GST No.", value: "08AACFE4028Q1Z5" },
                     ].map(row => (
                       <div key={row.label} className="flex items-center border-b border-surface-border/60">
-                        <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">{row.label}</span>
+                        <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">{row.label}</span>
                         <span className="flex-1 px-3 py-2.5 text-xs text-slate-500">{row.value}</span>
                       </div>
                     ))}
                     {/* Row: HSN Code — editable */}
                     <div className="flex items-center border-b border-surface-border/60">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">HSN Code</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">HSN Code</span>
                       <input type="text" value={form.hsn_code} onChange={e => setForm(f => ({ ...f, hsn_code: e.target.value }))}
-                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5" />
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-text-primary outline-none focus:bg-accent/5" />
                     </div>
                     {/* Row: Conformity Certificate */}
                     <div className="flex items-center">
-                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-[#0b0f14] px-3 py-2.5 text-xs text-slate-400">Conformity Certificate</span>
+                      <span className="w-48 shrink-0 border-r border-surface-border/60 bg-surface-base px-3 py-2.5 text-xs text-text-secondary">Conformity Certificate</span>
                       <input type="text" value={form.conformity_cert} onChange={e => setForm(f => ({ ...f, conformity_cert: e.target.value }))}
-                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-white outline-none focus:bg-accent/5" />
+                        className="flex-1 bg-transparent px-3 py-2.5 text-xs text-text-primary outline-none focus:bg-accent/5" />
                     </div>
                   </div>
                 </section>
 
                 <section>
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Notes</p>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Notes</p>
                   <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
-                    className="w-full rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-white outline-none focus:border-accent/70" />
+                    className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2 text-sm text-text-primary outline-none focus:border-accent/70" />
                 </section>
 
                 <div className="flex items-center justify-end gap-3 pb-1">
@@ -968,7 +987,7 @@ export default function OffersPage() {
                             )}
                           </button>
                           {pdfMenuOpen && !downloading && (
-                            <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-lg border border-surface-border bg-[#0f1419] py-1 shadow-xl">
+                            <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-lg border border-surface-border bg-surface-card py-1 shadow-xl">
                               <button type="button" onClick={() => handleDownload("normal")}
                                 className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:bg-surface-border/40 hover:text-white">
                                 Normal Offer
@@ -983,7 +1002,7 @@ export default function OffersPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                    <div className="rounded-xl border border-surface-border bg-surface-card p-4">
                       <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Update Status</p>
                       <div className="flex flex-wrap gap-2">
                         {detail.status !== "draft" && (
@@ -1004,6 +1023,12 @@ export default function OffersPage() {
                             Accept
                           </button>
                         )}
+                        {detail.status !== "partial" && (
+                          <button type="button" onClick={() => handleStatusChange("partial")}
+                            className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-amber-500/20">
+                            Partial
+                          </button>
+                        )}
                         {detail.status !== "rejected" && (
                           <button type="button" onClick={() => handleStatusChange("rejected")}
                             className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20">
@@ -1014,7 +1039,7 @@ export default function OffersPage() {
                     </div>
 
 
-                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                    <div className="rounded-xl border border-surface-border bg-surface-card p-4">
                       <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Company</p>
                       <div className="grid grid-cols-2 gap-x-8 gap-y-2">
                         <div><p className="text-[10px] uppercase tracking-wider text-slate-500">Name</p><p className="text-sm text-white">{detail.company_name || "—"}</p></div>
@@ -1030,35 +1055,52 @@ export default function OffersPage() {
                       </p>
                       <div className="overflow-hidden rounded-xl border border-surface-border">
                         <table className="w-full text-sm">
-                          <thead className="border-b border-surface-border bg-[#0f1419]/80">
+                          <thead className="border-b border-surface-border bg-surface-base">
                             <tr>
                               {["Description","Qty","Unit Price","Total"].map(h => (
                                 <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">{h}</th>
                               ))}
+                              {detail.status === "partial" && (
+                                <th className="px-3 py-2.5 text-center text-[10px] font-semibold uppercase tracking-wider text-amber-500">Accepted</th>
+                              )}
                             </tr>
                           </thead>
                           <tbody>
                             {(detail.items ?? []).length === 0 ? (
-                              <tr><td colSpan={4} className="px-3 py-4 text-center text-xs text-slate-600">No items.</td></tr>
-                            ) : (detail.items ?? []).map((it, i) => (
-                              <tr key={i} className={"border-t border-surface-border/40 " + (i % 2 === 1 ? "bg-white/[0.015]" : "")}>
-                                <td className="px-3 py-2.5 text-xs font-medium text-white">
-                                  {it.description}
-                                  {(it.specifications ?? []).length > 0 && (
-                                    <div className="mt-1 flex flex-wrap gap-1">
-                                      {(it.specifications ?? []).map(s => (
-                                        <span key={s.specification_id} className="rounded bg-surface-border/60 px-1.5 py-0.5 text-[10px] font-normal text-slate-400">
-                                          {s.spec_name}: <span className="text-slate-200">{s.value}</span>
-                                        </span>
-                                      ))}
-                                    </div>
+                              <tr><td colSpan={detail.status === "partial" ? 5 : 4} className="px-3 py-4 text-center text-xs text-slate-600">No items.</td></tr>
+                            ) : (detail.items ?? []).map((it, i) => {
+                              const isNotAccepted = detail.status === "partial" && it.accepted === false;
+                              return (
+                                <tr key={i} className={"border-t border-surface-border/40 " + (isNotAccepted ? "opacity-40" : i % 2 === 1 ? "bg-white/[0.015]" : "")}>
+                                  <td className="px-3 py-2.5 text-xs font-medium text-white">
+                                    {it.description}
+                                    {(it.specifications ?? []).length > 0 && (
+                                      <div className="mt-1 flex flex-wrap gap-1">
+                                        {(it.specifications ?? []).map(s => (
+                                          <span key={s.specification_id} className="rounded bg-surface-border/60 px-1.5 py-0.5 text-[10px] font-normal text-slate-400">
+                                            {s.spec_name}: <span className="text-slate-200">{s.value}</span>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2.5 align-top text-xs text-slate-300">{it.quantity} <span className="text-slate-500">{it.unit || "PC"}</span></td>
+                                  <td className="px-3 py-2.5 align-top font-mono text-xs text-slate-300">{fmt(it.unit_price)}</td>
+                                  <td className="px-3 py-2.5 align-top font-mono text-xs font-semibold text-white">{fmt(it.total_price ?? it.quantity * it.unit_price)}</td>
+                                  {detail.status === "partial" && (
+                                    <td className="px-3 py-2.5 text-center align-top">
+                                      <input
+                                        type="checkbox"
+                                        checked={it.accepted !== false}
+                                        onChange={() => it.id && handleItemAccepted(it.id, it.accepted !== false)}
+                                        className="h-3.5 w-3.5 cursor-pointer accent-amber-500"
+                                        title={it.accepted !== false ? "Accepted — click to mark as not accepted" : "Not accepted — click to accept"}
+                                      />
+                                    </td>
                                   )}
-                                </td>
-                                <td className="px-3 py-2.5 align-top text-xs text-slate-300">{it.quantity}</td>
-                                <td className="px-3 py-2.5 align-top font-mono text-xs text-slate-300">{fmt(it.unit_price)}</td>
-                                <td className="px-3 py-2.5 align-top font-mono text-xs font-semibold text-white">{fmt(it.total_price ?? it.quantity * it.unit_price)}</td>
-                              </tr>
-                            ))}
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -1070,7 +1112,7 @@ export default function OffersPage() {
                       const dAssessable = dSubtotal + dPacking + Number(detail.freight_charges);
                       const dGst = dAssessable * Number(detail.gst_pct) / 100;
                       return (
-                        <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                        <div className="rounded-xl border border-surface-border bg-surface-card p-4">
                           <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Summary</p>
                           <div className="space-y-2">
                             <div className="flex justify-between text-sm text-slate-400"><span>Subtotal</span><span className="font-mono">{fmt(dSubtotal)}</span></div>
@@ -1086,7 +1128,7 @@ export default function OffersPage() {
                     })()}
 
                     {detail.terms_conditions && (
-                      <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <div className="rounded-xl border border-surface-border bg-surface-card p-4">
                         <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Terms & Conditions</p>
                         <div className="overflow-hidden rounded-lg border border-surface-border/60">
                           {detail.terms_conditions.split("\n").filter(Boolean).map((line, i) => {
@@ -1095,7 +1137,7 @@ export default function OffersPage() {
                             const v = sep > 0 ? line.slice(sep + 2) : "";
                             return (
                               <div key={i} className="flex border-b border-surface-border/40 last:border-b-0">
-                                <span className="w-44 shrink-0 border-r border-surface-border/40 bg-[#0b0f14] px-3 py-2 text-[11px] text-slate-500">{k}</span>
+                                <span className="w-44 shrink-0 border-r border-surface-border/40 bg-surface-base px-3 py-2 text-[11px] text-text-secondary">{k}</span>
                                 <span className="flex-1 px-3 py-2 text-[11px] text-slate-300">{v}</span>
                               </div>
                             );
@@ -1104,7 +1146,7 @@ export default function OffersPage() {
                       </div>
                     )}
                     {detail.notes && (
-                      <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <div className="rounded-xl border border-surface-border bg-surface-card p-4">
                         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Notes</p>
                         <p className="text-sm text-slate-300">{detail.notes}</p>
                       </div>
