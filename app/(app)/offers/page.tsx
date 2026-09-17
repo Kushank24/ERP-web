@@ -6,6 +6,7 @@ import { api, apiBlob } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
 import { ProductCombobox } from "@/components/ProductCombobox";
+import { OFFER_UNITS } from "@/lib/units";
 
 interface Company { id: number; name: string; contact_person: string | null; phone: string | null; email: string | null; }
 interface Enquiry { id: number; enquiry_number: string; }
@@ -38,7 +39,6 @@ interface OfferDetail extends OfferRow {
 
 type DraftItem = { product_id: number | null; description: string; quantity: number; unit: string; unit_price: number; specs: SpecValue[]; };
 const BLANK_ITEM: DraftItem = { product_id: null, description: "", quantity: 1, unit: "PC", unit_price: 0, specs: [] };
-const OFFER_UNITS = ["PC", "SET", "MTR"] as const;
 const BLANK_FORM = {
   company_id: "" as string | number, enquiry_id: "" as string | number,
   offer_number: "", offer_date: new Date().toISOString().slice(0, 10),

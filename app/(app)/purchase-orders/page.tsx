@@ -5,6 +5,7 @@ import { api, apiBlob } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
 import { MaterialCombobox } from "@/components/MaterialCombobox";
+import { STOCK_UNITS } from "@/lib/units";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -101,7 +102,11 @@ const STATUS_MAP: Record<number, { label: string; classes: string }> = {
   },
 };
 
-const UNITS = ["Nos", "Kg", "Meter", "Feet", "Sq. Meter", "Set"] as const;
+// Shared with the Products/BOQ screen and the backend conversion table — see
+// lib/units.ts. "Sq. Meter" was replaced by "SqMtr", which is what the data
+// actually contains (28 BOQ lines and 2 materials vs a single "Sq. Meter").
+// Both spellings still convert, so existing rows are unaffected.
+const UNITS = STOCK_UNITS;
 
 const BLANK_LINE: DraftLine = {
   lineId: null,

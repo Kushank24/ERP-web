@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
+import { STOCK_UNITS } from "@/lib/units";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Types
@@ -27,7 +28,11 @@ type EditDraft = {
 /* ─────────────────────────────────────────────────────────────────────────────
    Constants
 ───────────────────────────────────────────────────────────────────────────── */
-const UNITS = ["Nos", "Kg", "Meter", "Set"] as const;
+// Shared with Products/BOQ and Purchase Orders — see lib/units.ts. This was
+// ["Nos", "Kg", "Meter", "Set"], so a material's stock unit could not be set to
+// SqMtr, Feet, g or mm from this screen even though the data already holds all
+// four (they arrived via CSV bulk upload).
+const UNITS = STOCK_UNITS;
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Helpers
