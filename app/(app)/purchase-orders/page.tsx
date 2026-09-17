@@ -49,6 +49,21 @@ type PODetail = {
   delivery_details: Record<string, string> | null;
   additional_costs: AdditionalCost[];
   lines: POLine[];
+  /**
+   * Returned by /receive and /status when a received quantity could not be
+   * converted into the material's stock unit (e.g. ordered in Meter, stock
+   * held in Kg). The quantity is still recorded — the goods arrived — so this
+   * is a warning, not an error, and the stock figure needs review.
+   */
+  unit_warnings?: UnitWarning[];
+};
+
+type UnitWarning = {
+  material: string;
+  po_unit: string;
+  stock_unit: string;
+  quantity: number;
+  message: string;
 };
 
 type Supplier = {
@@ -170,6 +185,60 @@ function ErrorAlert({ message }: { message: string }) {
   );
 }
 
+/**
+ * Shown after a goods receipt whose unit could not be converted into the
+ * material's stock unit. Amber, not red: the receipt succeeded and the stock
+ * was updated — but with an unconverted number, so someone has to check it.
+ */
+function UnitWarningAlert({
+  warnings,
+  onDismiss,
+}: {
+  warnings: UnitWarning[];
+  onDismiss(): void;
+}) {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-3 text-sm text-amber-300"
+    >
+      <div className="flex items-start gap-2.5">
+        <span className="mt-px shrink-0 text-base leading-none">⚠</span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">
+            Stock updated, but {warnings.length === 1 ? "one unit" : `${warnings.length} units`} could not be converted
+          </p>
+          <ul className="mt-1.5 space-y-1.5">
+            {warnings.map((w, i) => (
+              <li key={i} className="leading-snug">
+                <span className="font-medium text-amber-200">{w.material}</span>
+                {" — received "}
+                <span className="font-mono">{w.quantity}</span>{" "}
+                <span className="font-mono">{w.po_unit}</span>
+                {" but stock is held in "}
+                <span className="font-mono">{w.stock_unit}</span>.
+                {" Added as-is without conversion — check this material's stock figure."}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-amber-400/80">
+            Fix by setting the material&apos;s unit in Inventory, or the unit on this
+            purchase-order line, so both measure the same thing.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss warning"
+          className="shrink-0 rounded px-1.5 text-amber-400/70 transition-colors hover:text-amber-200"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -277,6 +346,7 @@ export default function PurchaseOrdersPage() {
   const [receiveBillDraft, setReceiveBillDraft] = useState("");
   const [receiving, setReceiving] = useState(false);
   const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [unitWarnings, setUnitWarnings] = useState<UnitWarning[]>([]);
 
   // ── Form fields ────────────────────────────────────────────────────────────
   const [fPONumber, setFPONumber] = useState("");
@@ -340,6 +410,8 @@ export default function PurchaseOrdersPage() {
     setDetailLoading(true);
     setDetailError(null);
     setDetail(null);
+    // Warnings belong to the receipt that produced them, not to the panel.
+    setUnitWarnings([]);
     api<PODetail>(`/api/v1/purchase-orders/${id}`)
       .then((data) => {
         setDetail(data);
@@ -436,6 +508,9 @@ export default function PurchaseOrdersPage() {
         },
       });
       setDetail(updated);
+      // Surfaced rather than left in the server log: the quantity was recorded
+      // without conversion, so the stock figure needs a human to look at it.
+      setUnitWarnings(updated.unit_warnings ?? []);
       setReceivingMode(false);
       setReceiveMap({});
       setReceiveBillNumbers([]);
@@ -1289,6 +1364,12 @@ export default function PurchaseOrdersPage() {
                   {/* ── Receive / PDF errors ── */}
                   {receiveError && <ErrorAlert message={receiveError} />}
                   {pdfError && <ErrorAlert message={pdfError} />}
+                  {unitWarnings.length > 0 && (
+                    <UnitWarningAlert
+                      warnings={unitWarnings}
+                      onDismiss={() => setUnitWarnings([])}
+                    />
+                  )}
 
                   {/* ── Supplier information card ── */}
                   <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
