@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState, useMemo, useTransition } from "react";
 import { api, apiBlob } from "@/lib/api";
+import { STOCK_UNITS } from "@/lib/units";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,11 @@ type UploadResult = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const UNIT_OPTIONS = ["Nos", "Kg", "Meter", "Set"] as const;
+// Shared with purchase orders and the backend conversion table — see lib/units.ts.
+// This list was previously ["Nos", "Kg", "Meter", "Set"], so a BOQ line could
+// not be expressed in SqMtr, Feet, g or mm even though inventory holds stock in
+// all four.
+const UNIT_OPTIONS = STOCK_UNITS;
 const UNCATEGORIZED = "";
 
 let _keySeq = 0;
