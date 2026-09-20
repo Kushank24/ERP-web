@@ -134,33 +134,41 @@ export function RichTextEditor({
 
   return (
     <>
-      {/* Scoped styles for editor content */}
+      {/*
+        Scoped styles for editor content. Colors are read from the app's
+        theme tokens (--color-*, defined in globals.css) rather than hardcoded
+        hex, so this box repaints when [data-theme="light"] is set instead of
+        going invisible. Previously every color here was a fixed hex tuned
+        for the dark palette — the .rte-body text stayed light grey while
+        light mode's CSS repainted the *container* backgrounds, making the
+        text unreadable against its own editing surface.
+      */}
       <style>{`
-        .rte-body { color:#e2e8f0; font-size:14px; line-height:1.7; word-break:break-word; }
+        .rte-body { color: var(--color-text-primary); font-size:14px; line-height:1.7; word-break:break-word; }
         .rte-body p { margin:0 0 .6rem; }
         .rte-body p:last-child { margin-bottom:0; }
-        .rte-body h1 { font-size:1.4rem; font-weight:700; color:#fff; margin:0 0 .6rem; }
-        .rte-body h2 { font-size:1.15rem; font-weight:600; color:#fff; margin:0 0 .6rem; }
-        .rte-body h3 { font-size:1rem; font-weight:600; color:#fff; margin:0 0 .5rem; }
-        .rte-body strong { font-weight:700; color:#fff; }
+        .rte-body h1 { font-size:1.4rem; font-weight:700; color: var(--color-text-primary); margin:0 0 .6rem; }
+        .rte-body h2 { font-size:1.15rem; font-weight:600; color: var(--color-text-primary); margin:0 0 .6rem; }
+        .rte-body h3 { font-size:1rem; font-weight:600; color: var(--color-text-primary); margin:0 0 .5rem; }
+        .rte-body strong { font-weight:700; color: var(--color-text-primary); }
         .rte-body em { font-style:italic; }
         .rte-body u { text-decoration:underline; }
         .rte-body s { text-decoration:line-through; }
-        .rte-body a { color:#ff6b35; text-decoration:underline; }
+        .rte-body a { color: var(--color-accent); text-decoration:underline; }
         .rte-body ul { list-style:disc; padding-left:1.4rem; margin:0 0 .6rem; }
         .rte-body ol { list-style:decimal; padding-left:1.4rem; margin:0 0 .6rem; }
         .rte-body li { margin-bottom:.2rem; }
-        .rte-body blockquote { border-left:3px solid #ff6b35; padding-left:.85rem; color:#94a3b8; margin:0 0 .6rem; }
+        .rte-body blockquote { border-left:3px solid var(--color-accent); padding-left:.85rem; color: var(--color-text-secondary); margin:0 0 .6rem; }
         .rte-body img { max-width:100%; height:auto; border-radius:4px; margin:.35rem 0; display:block; }
-        .rte-body code { background:#1e2530; border-radius:3px; padding:0 .3em; font-family:monospace; font-size:.9em; }
-        .rte-body pre { background:#1e2530; border-radius:6px; padding:.75rem 1rem; overflow-x:auto; margin:0 0 .6rem; }
+        .rte-body code { background: var(--color-bg-surface); border-radius:3px; padding:0 .3em; font-family:monospace; font-size:.9em; }
+        .rte-body pre { background: var(--color-bg-surface); border-radius:6px; padding:.75rem 1rem; overflow-x:auto; margin:0 0 .6rem; }
         .rte-body pre code { background:none; padding:0; }
-        .rte-body p.is-editor-empty:first-child::before { content:attr(data-placeholder); color:#475569; pointer-events:none; float:left; height:0; }
+        .rte-body p.is-editor-empty:first-child::before { content:attr(data-placeholder); color: var(--color-text-muted); pointer-events:none; float:left; height:0; }
       `}</style>
 
-      <div className="overflow-hidden rounded-lg border border-surface-border bg-[#0b0f14]">
+      <div className="overflow-hidden rounded-lg border border-surface-border" style={{ backgroundColor: "var(--color-bg-base)" }}>
         {/* ── Toolbar ── */}
-        <div className="flex flex-wrap items-center gap-0.5 border-b border-surface-border bg-[#0f1419] px-2 py-1.5">
+        <div className="flex flex-wrap items-center gap-0.5 border-b border-surface-border px-2 py-1.5" style={{ backgroundColor: "var(--color-bg-surface)" }}>
           <Btn active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (⌘B)">
             <strong>B</strong>
           </Btn>
