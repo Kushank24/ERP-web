@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, FormEvent } from "react";
-import { api } from "@/lib/api";
+import { useState, useEffect, useCallback, FormEvent, useRef } from "react";
+import { api, apiFormData } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
 
@@ -56,7 +56,26 @@ type SODetail = {
   total_amount: number;
   additional_costs: AdditionalCost[];
   lines: SOLine[];
+  invoice_document: SODocument | null;
+  eway_bill_document: SODocument | null;
 };
+
+/**
+ * Identity metadata for a Cloudinary-hosted document — deliberately not a
+ * URL. These upload with type="authenticated" (compliance-sensitive GST
+ * documents), so there is no permanent URL to store; a fresh signed one is
+ * requested from GET /sales-orders/{id}/documents/{doc_type}/url every time
+ * the file is opened, and expires shortly after.
+ */
+type SODocument = {
+  public_id: string;
+  resource_type: string;
+  format: string;
+  original_filename: string;
+  bytes?: number;
+};
+
+type SODocKind = "invoice" | "eway_bill";
 
 type FinishedGood = {
   id: number;
@@ -285,6 +304,12 @@ export default function SalesOrdersPage() {
   const [fDeliveryDate, setFDeliveryDate] = useState("");
   const [fGSTRate, setFGSTRate] = useState("18");
   const [fNotes, setFNotes] = useState("");
+  const [fInvoiceDoc, setFInvoiceDoc] = useState<SODocument | null>(null);
+  const [fEwayBillDoc, setFEwayBillDoc] = useState<SODocument | null>(null);
+  const [uploadingDoc, setUploadingDoc] = useState<SODocKind | null>(null);
+  const [docUploadError, setDocUploadError] = useState<string | null>(null);
+  const invoiceFileRef = useRef<HTMLInputElement>(null);
+  const ewayBillFileRef = useRef<HTMLInputElement>(null);
   const [draftLines, setDraftLines] = useState<DraftLine[]>([
     { ...BLANK_LINE },
   ]);
@@ -354,11 +379,59 @@ export default function SalesOrdersPage() {
     loadDetail(id);
   }
 
+  // ── Sales-invoice / e-way-bill upload ───────────────────────────────────────
+  // Uploaded immediately on file selection, before the order itself exists —
+  // same pattern the email-campaign image upload already uses: upload first,
+  // hold the returned identity metadata in form state, submit it as part of
+  // the create/update JSON payload. Never a URL — see SODocument's comment.
+  const [viewingDoc, setViewingDoc] = useState<SODocKind | null>(null);
+  const [viewDocError, setViewDocError] = useState<string | null>(null);
+
+  /**
+   * Fetches a fresh signed URL and opens it immediately. Never reuse a URL
+   * from a previous call — it's time-limited server-side (see
+   * cloudinary_service.SIGNED_URL_TTL_SECONDS) and will 401 once expired.
+   */
+  async function handleViewDocument(soId: number, kind: SODocKind) {
+    setViewingDoc(kind);
+    setViewDocError(null);
+    try {
+      const res = await api<{ url: string }>(
+        `/api/v1/sales-orders/${soId}/documents/${kind}/url`,
+      );
+      window.open(res.url, "_blank", "noopener,noreferrer");
+    } catch (e: unknown) {
+      setViewDocError(e instanceof Error ? e.message : "Could not open document");
+    } finally {
+      setViewingDoc(null);
+    }
+  }
+
+  async function handleDocUpload(kind: SODocKind, file: File) {
+    setUploadingDoc(kind);
+    setDocUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await apiFormData<{ doc_type: SODocKind; document: SODocument }>(
+        `/api/v1/sales-orders/upload-document?doc_type=${kind}`,
+        formData,
+      );
+      if (kind === "invoice") setFInvoiceDoc(res.document);
+      else setFEwayBillDoc(res.document);
+    } catch (e: unknown) {
+      setDocUploadError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploadingDoc(null);
+    }
+  }
+
   function openNewForm() {
     setIsEditing(false);
     setFInvoiceNumber(""); setFCompanyName(""); setFCompanyLocation("");
     setFCompanyContact(""); setFCompanyGSTIN(""); setFSalesDate("");
     setFDeliveryDate(""); setFGSTRate("18"); setFNotes("");
+    setFInvoiceDoc(null); setFEwayBillDoc(null); setDocUploadError(null);
     setDraftLines([{ ...BLANK_LINE }]);
     setIsNewCompany(false);
     setShowForm(true);
@@ -380,6 +453,9 @@ export default function SalesOrdersPage() {
     setFDeliveryDate(detail.delivery_date ? String(detail.delivery_date).slice(0, 10) : "");
     setFGSTRate(String(detail.gst_rate ?? 18));
     setFNotes(detail.notes || "");
+    setFInvoiceDoc(detail.invoice_document);
+    setFEwayBillDoc(detail.eway_bill_document);
+    setDocUploadError(null);
     setDraftLines(detail.lines.map((l) => ({
       lineId: l.id,
       finished_good_id: "",
@@ -511,6 +587,8 @@ export default function SalesOrdersPage() {
           delivery_date: fDeliveryDate || null,
           gst_rate: parseFloat(fGSTRate) || 18,
           notes: fNotes.trim() || null,
+          invoice_document: fInvoiceDoc,
+          eway_bill_document: fEwayBillDoc,
           lines: draftLines.map((l) => ({
             id: l.lineId,
             finished_good_id: l.finished_good_id ? parseInt(l.finished_good_id, 10) : undefined,
@@ -536,6 +614,8 @@ export default function SalesOrdersPage() {
           delivery_date: fDeliveryDate || null,
           gst_rate: parseFloat(fGSTRate) || 18,
           notes: fNotes.trim() || null,
+          invoice_document: fInvoiceDoc,
+          eway_bill_document: fEwayBillDoc,
           lines: draftLines.map((l) => ({
             finished_good_id: l.finished_good_id ? parseInt(l.finished_good_id, 10) : undefined,
             product_name: l.product_name.trim(),
@@ -555,6 +635,7 @@ export default function SalesOrdersPage() {
       setFInvoiceNumber(""); setFCompanyName(""); setFCompanyLocation("");
       setFCompanyContact(""); setFCompanyGSTIN(""); setFSalesDate("");
       setFDeliveryDate(""); setFGSTRate("18"); setFNotes("");
+      setFInvoiceDoc(null); setFEwayBillDoc(null); setDocUploadError(null);
       setDraftLines([{ ...BLANK_LINE }]);
       setShowForm(false);
       setSelectedId(saved.id);
@@ -926,6 +1007,97 @@ export default function SalesOrdersPage() {
                 </div>
               </section>
 
+              {/* ── Section: Documents ── */}
+              <section>
+                <SectionHeading>Documents (optional)</SectionHeading>
+                {docUploadError && (
+                  <div className="mt-2">
+                    <ErrorAlert message={docUploadError} />
+                  </div>
+                )}
+                <div className="mt-3 grid grid-cols-2 gap-4">
+                  <FormField label="Sales Invoice">
+                    <input
+                      ref={invoiceFileRef}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) handleDocUpload("invoice", file);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={uploadingDoc === "invoice"}
+                      onClick={() => invoiceFileRef.current?.click()}
+                      className="flex w-full items-center justify-between rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-slate-300 transition hover:border-accent/50 disabled:opacity-50"
+                    >
+                      <span className="truncate">
+                        {uploadingDoc === "invoice"
+                          ? "Uploading…"
+                          : fInvoiceDoc
+                            ? fInvoiceDoc.original_filename
+                            : "Choose file…"}
+                      </span>
+                      {fInvoiceDoc && uploadingDoc !== "invoice" && (
+                        <span className="ml-2 shrink-0 text-emerald-400">✓</span>
+                      )}
+                    </button>
+                    {fInvoiceDoc && (
+                      <button
+                        type="button"
+                        onClick={() => setFInvoiceDoc(null)}
+                        className="mt-1 text-[11px] text-slate-500 hover:text-red-400"
+                      >
+                        Remove attached file
+                      </button>
+                    )}
+                  </FormField>
+
+                  <FormField label="E-Way Bill">
+                    <input
+                      ref={ewayBillFileRef}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) handleDocUpload("eway_bill", file);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={uploadingDoc === "eway_bill"}
+                      onClick={() => ewayBillFileRef.current?.click()}
+                      className="flex w-full items-center justify-between rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-slate-300 transition hover:border-accent/50 disabled:opacity-50"
+                    >
+                      <span className="truncate">
+                        {uploadingDoc === "eway_bill"
+                          ? "Uploading…"
+                          : fEwayBillDoc
+                            ? fEwayBillDoc.original_filename
+                            : "Choose file…"}
+                      </span>
+                      {fEwayBillDoc && uploadingDoc !== "eway_bill" && (
+                        <span className="ml-2 shrink-0 text-emerald-400">✓</span>
+                      )}
+                    </button>
+                    {fEwayBillDoc && (
+                      <button
+                        type="button"
+                        onClick={() => setFEwayBillDoc(null)}
+                        className="mt-1 text-[11px] text-slate-500 hover:text-red-400"
+                      >
+                        Remove attached file
+                      </button>
+                    )}
+                  </FormField>
+                </div>
+              </section>
+
               {/* ── Section: Items ── */}
               <section>
                 <div className="flex items-center justify-between">
@@ -1269,6 +1441,42 @@ export default function SalesOrdersPage() {
                       </DetailField>
                     </div>
                   </div>
+
+                  {/* ── Documents card ── */}
+                  {(detail.invoice_document || detail.eway_bill_document) && (
+                    <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
+                      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Documents
+                      </p>
+                      {viewDocError && (
+                        <div className="mb-3">
+                          <ErrorAlert message={viewDocError} />
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-3">
+                        {detail.invoice_document && (
+                          <button
+                            type="button"
+                            disabled={viewingDoc === "invoice"}
+                            onClick={() => handleViewDocument(detail.id, "invoice")}
+                            className="flex items-center gap-2 rounded-lg border border-surface-border px-3 py-2 text-xs text-slate-300 transition hover:border-accent/50 hover:text-white disabled:opacity-50"
+                          >
+                            {viewingDoc === "invoice" ? "Opening…" : "View Sales Invoice"}
+                          </button>
+                        )}
+                        {detail.eway_bill_document && (
+                          <button
+                            type="button"
+                            disabled={viewingDoc === "eway_bill"}
+                            onClick={() => handleViewDocument(detail.id, "eway_bill")}
+                            className="flex items-center gap-2 rounded-lg border border-surface-border px-3 py-2 text-xs text-slate-300 transition hover:border-accent/50 hover:text-white disabled:opacity-50"
+                          >
+                            {viewingDoc === "eway_bill" ? "Opening…" : "View E-Way Bill"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* ── Order dates & tax card ── */}
                   <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
