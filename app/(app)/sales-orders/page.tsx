@@ -58,6 +58,7 @@ type SODetail = {
   lines: SOLine[];
   invoice_document: SODocument | null;
   eway_bill_document: SODocument | null;
+  lr_copy_document: SODocument | null;
 };
 
 /**
@@ -75,7 +76,7 @@ type SODocument = {
   bytes?: number;
 };
 
-type SODocKind = "invoice" | "eway_bill";
+type SODocKind = "invoice" | "eway_bill" | "lr_copy";
 
 type FinishedGood = {
   id: number;
@@ -306,10 +307,12 @@ export default function SalesOrdersPage() {
   const [fNotes, setFNotes] = useState("");
   const [fInvoiceDoc, setFInvoiceDoc] = useState<SODocument | null>(null);
   const [fEwayBillDoc, setFEwayBillDoc] = useState<SODocument | null>(null);
+  const [fLrCopyDoc, setFLrCopyDoc] = useState<SODocument | null>(null);
   const [uploadingDoc, setUploadingDoc] = useState<SODocKind | null>(null);
   const [docUploadError, setDocUploadError] = useState<string | null>(null);
   const invoiceFileRef = useRef<HTMLInputElement>(null);
   const ewayBillFileRef = useRef<HTMLInputElement>(null);
+  const lrCopyFileRef = useRef<HTMLInputElement>(null);
   const [draftLines, setDraftLines] = useState<DraftLine[]>([
     { ...BLANK_LINE },
   ]);
@@ -418,7 +421,8 @@ export default function SalesOrdersPage() {
         formData,
       );
       if (kind === "invoice") setFInvoiceDoc(res.document);
-      else setFEwayBillDoc(res.document);
+      else if (kind === "eway_bill") setFEwayBillDoc(res.document);
+      else setFLrCopyDoc(res.document);
     } catch (e: unknown) {
       setDocUploadError(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -431,7 +435,7 @@ export default function SalesOrdersPage() {
     setFInvoiceNumber(""); setFCompanyName(""); setFCompanyLocation("");
     setFCompanyContact(""); setFCompanyGSTIN(""); setFSalesDate("");
     setFDeliveryDate(""); setFGSTRate("18"); setFNotes("");
-    setFInvoiceDoc(null); setFEwayBillDoc(null); setDocUploadError(null);
+    setFInvoiceDoc(null); setFEwayBillDoc(null); setFLrCopyDoc(null); setDocUploadError(null);
     setDraftLines([{ ...BLANK_LINE }]);
     setIsNewCompany(false);
     setShowForm(true);
@@ -455,6 +459,7 @@ export default function SalesOrdersPage() {
     setFNotes(detail.notes || "");
     setFInvoiceDoc(detail.invoice_document);
     setFEwayBillDoc(detail.eway_bill_document);
+    setFLrCopyDoc(detail.lr_copy_document);
     setDocUploadError(null);
     setDraftLines(detail.lines.map((l) => ({
       lineId: l.id,
@@ -589,6 +594,7 @@ export default function SalesOrdersPage() {
           notes: fNotes.trim() || null,
           invoice_document: fInvoiceDoc,
           eway_bill_document: fEwayBillDoc,
+          lr_copy_document: fLrCopyDoc,
           lines: draftLines.map((l) => ({
             id: l.lineId,
             finished_good_id: l.finished_good_id ? parseInt(l.finished_good_id, 10) : undefined,
@@ -616,6 +622,7 @@ export default function SalesOrdersPage() {
           notes: fNotes.trim() || null,
           invoice_document: fInvoiceDoc,
           eway_bill_document: fEwayBillDoc,
+          lr_copy_document: fLrCopyDoc,
           lines: draftLines.map((l) => ({
             finished_good_id: l.finished_good_id ? parseInt(l.finished_good_id, 10) : undefined,
             product_name: l.product_name.trim(),
@@ -635,7 +642,7 @@ export default function SalesOrdersPage() {
       setFInvoiceNumber(""); setFCompanyName(""); setFCompanyLocation("");
       setFCompanyContact(""); setFCompanyGSTIN(""); setFSalesDate("");
       setFDeliveryDate(""); setFGSTRate("18"); setFNotes("");
-      setFInvoiceDoc(null); setFEwayBillDoc(null); setDocUploadError(null);
+      setFInvoiceDoc(null); setFEwayBillDoc(null); setFLrCopyDoc(null); setDocUploadError(null);
       setDraftLines([{ ...BLANK_LINE }]);
       setShowForm(false);
       setSelectedId(saved.id);
@@ -1015,7 +1022,7 @@ export default function SalesOrdersPage() {
                     <ErrorAlert message={docUploadError} />
                   </div>
                 )}
-                <div className="mt-3 grid grid-cols-2 gap-4">
+                <div className="mt-3 grid grid-cols-3 gap-4">
                   <FormField label="Sales Invoice">
                     <input
                       ref={invoiceFileRef}
@@ -1089,6 +1096,46 @@ export default function SalesOrdersPage() {
                       <button
                         type="button"
                         onClick={() => setFEwayBillDoc(null)}
+                        className="mt-1 text-[11px] text-slate-500 hover:text-red-400"
+                      >
+                        Remove attached file
+                      </button>
+                    )}
+                  </FormField>
+
+                  <FormField label="LR Copy">
+                    <input
+                      ref={lrCopyFileRef}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) handleDocUpload("lr_copy", file);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={uploadingDoc === "lr_copy"}
+                      onClick={() => lrCopyFileRef.current?.click()}
+                      className="flex w-full items-center justify-between rounded-lg border border-surface-border bg-[#0f1419] px-3 py-2 text-sm text-slate-300 transition hover:border-accent/50 disabled:opacity-50"
+                    >
+                      <span className="truncate">
+                        {uploadingDoc === "lr_copy"
+                          ? "Uploading…"
+                          : fLrCopyDoc
+                            ? fLrCopyDoc.original_filename
+                            : "Choose file…"}
+                      </span>
+                      {fLrCopyDoc && uploadingDoc !== "lr_copy" && (
+                        <span className="ml-2 shrink-0 text-emerald-400">✓</span>
+                      )}
+                    </button>
+                    {fLrCopyDoc && (
+                      <button
+                        type="button"
+                        onClick={() => setFLrCopyDoc(null)}
                         className="mt-1 text-[11px] text-slate-500 hover:text-red-400"
                       >
                         Remove attached file
@@ -1443,7 +1490,7 @@ export default function SalesOrdersPage() {
                   </div>
 
                   {/* ── Documents card ── */}
-                  {(detail.invoice_document || detail.eway_bill_document) && (
+                  {(detail.invoice_document || detail.eway_bill_document || detail.lr_copy_document) && (
                     <div className="rounded-xl border border-surface-border bg-[#0f1419] p-4">
                       <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                         Documents
@@ -1472,6 +1519,16 @@ export default function SalesOrdersPage() {
                             className="flex items-center gap-2 rounded-lg border border-surface-border px-3 py-2 text-xs text-slate-300 transition hover:border-accent/50 hover:text-white disabled:opacity-50"
                           >
                             {viewingDoc === "eway_bill" ? "Opening…" : "View E-Way Bill"}
+                          </button>
+                        )}
+                        {detail.lr_copy_document && (
+                          <button
+                            type="button"
+                            disabled={viewingDoc === "lr_copy"}
+                            onClick={() => handleViewDocument(detail.id, "lr_copy")}
+                            className="flex items-center gap-2 rounded-lg border border-surface-border px-3 py-2 text-xs text-slate-300 transition hover:border-accent/50 hover:text-white disabled:opacity-50"
+                          >
+                            {viewingDoc === "lr_copy" ? "Opening…" : "View LR Copy"}
                           </button>
                         )}
                       </div>
