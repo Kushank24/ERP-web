@@ -78,6 +78,12 @@ type SODocument = {
 
 type SODocKind = "invoice" | "eway_bill" | "lr_copy";
 
+type SendEmailResponse = {
+  status: "sent" | "missing_documents";
+  missing?: string[];
+  attached?: string[];
+};
+
 type FinishedGood = {
   id: number;
   product_name: string;
@@ -389,6 +395,59 @@ export default function SalesOrdersPage() {
   // the create/update JSON payload. Never a URL — see SODocument's comment.
   const [viewingDoc, setViewingDoc] = useState<SODocKind | null>(null);
   const [viewDocError, setViewDocError] = useState<string | null>(null);
+
+  // ── Send Email modal ────────────────────────────────────────────────────────
+  const [emailModalRow, setEmailModalRow] = useState<SORow | null>(null);
+  const [emailAddress, setEmailAddress] = useState("");
+  // null = address-entry step; non-null (possibly empty array) = "some
+  // documents are missing, send anyway?" confirmation step.
+  const [emailMissingDocs, setEmailMissingDocs] = useState<string[] | null>(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSentOk, setEmailSentOk] = useState(false);
+  // Sales order ids a Send Email has succeeded for in this session — drives
+  // the green "sent" state on the row's mail button. Not persisted server
+  // side, so it resets on reload.
+  const [emailSentRowIds, setEmailSentRowIds] = useState<Set<number>>(new Set());
+
+  function openSendEmailModal(row: SORow) {
+    setEmailModalRow(row);
+    setEmailAddress("");
+    setEmailMissingDocs(null);
+    setEmailError(null);
+    setEmailSentOk(false);
+  }
+
+  function closeSendEmailModal() {
+    setEmailModalRow(null);
+  }
+
+  async function submitSendEmail(force: boolean) {
+    if (!emailModalRow) return;
+    if (!force && !emailAddress.trim()) {
+      setEmailError("Enter a recipient email address.");
+      return;
+    }
+    setEmailSending(true);
+    setEmailError(null);
+    try {
+      const res = await api<SendEmailResponse>(
+        `/api/v1/sales-orders/${emailModalRow.id}/send-email`,
+        { method: "POST", json: { to_email: emailAddress.trim(), force } },
+      );
+      if (res.status === "missing_documents") {
+        setEmailMissingDocs(res.missing ?? []);
+      } else {
+        setEmailSentOk(true);
+        setEmailMissingDocs(null);
+        setEmailSentRowIds((prev) => new Set(prev).add(emailModalRow.id));
+      }
+    } catch (e: unknown) {
+      setEmailError(e instanceof Error ? e.message : "Failed to send email");
+    } finally {
+      setEmailSending(false);
+    }
+  }
 
   /**
    * Fetches a fresh signed URL and opens it immediately. Never reuse a URL
@@ -723,7 +782,7 @@ export default function SalesOrdersPage() {
 
         {/* Column filters */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-1.5 space-y-1.5">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto] items-center gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto_3rem] items-center gap-2">
             <input type="search" value={colFilters.invoice} placeholder="Invoice #…"
               onChange={e => setColFilters(p => ({ ...p, invoice: e.target.value }))}
               className="w-full rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1 text-[11px] text-white placeholder-slate-600 outline-none transition focus:border-accent/50" />
@@ -739,6 +798,7 @@ export default function SalesOrdersPage() {
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
+            <div />
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-slate-500">Date:</span>
@@ -756,11 +816,12 @@ export default function SalesOrdersPage() {
 
         {/* Column header bar */}
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto] items-center gap-2 text-[10px] font-semibold uppercase tracking-wider">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto_3rem] items-center gap-2 text-[10px] font-semibold uppercase tracking-wider">
             <SortHeader label="Invoice #" colKey="invoice_number" currentKey={soSortKey as string} currentDir={soSortDir} onSort={k => toggleSOSort(k as keyof SORow)} />
             <SortHeader label="Company" colKey="company_name" currentKey={soSortKey as string} currentDir={soSortDir} onSort={k => toggleSOSort(k as keyof SORow)} />
             <SortHeader label="Amount" colKey="total_amount" currentKey={soSortKey as string} currentDir={soSortDir} onSort={k => toggleSOSort(k as keyof SORow)} className="justify-end" />
             <SortHeader label="Status" colKey="status" currentKey={soSortKey as string} currentDir={soSortDir} onSort={k => toggleSOSort(k as keyof SORow)} />
+            <span className="text-center">Email</span>
           </div>
         </div>
 
@@ -789,45 +850,75 @@ export default function SalesOrdersPage() {
             <ul>
               {filteredRows.map((row) => {
                 const isActive = row.id === selectedId;
+                const wasEmailed = emailSentRowIds.has(row.id);
                 return (
                   <li key={row.id}>
-                    <button
-                      type="button"
-                      onClick={() => handleRowClick(row.id)}
-                      className={`w-full border-b border-surface-border/30 px-4 py-3 text-left last:border-b-0 transition-colors ${
+                    <div
+                      className={`flex items-stretch border-b border-surface-border/30 last:border-b-0 transition-colors ${
                         isActive
                           ? "border-l-2 border-l-accent bg-accent/10"
                           : "hover:bg-white/[0.025]"
                       }`}
                     >
-                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto] items-center gap-2">
-                        <span
-                          className={`truncate text-xs font-semibold ${
-                            isActive ? "text-accent" : "text-white"
+                      <button
+                        type="button"
+                        onClick={() => handleRowClick(row.id)}
+                        className="min-w-0 flex-1 px-4 py-3 text-left"
+                      >
+                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_auto] items-center gap-2">
+                          <span
+                            className={`truncate text-xs font-semibold ${
+                              isActive ? "text-accent" : "text-white"
+                            }`}
+                          >
+                            {row.invoice_number}
+                          </span>
+                          <span className="truncate text-xs text-slate-400">
+                            {row.company_name ?? "—"}
+                          </span>
+                          <span className="text-right font-mono text-xs text-slate-300">
+                            {fmt(row.total_amount)}
+                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <StatusBadge status={row.payment_status} />
+                            {row.payment_status === 2 && row.payment_amount != null && (
+                              <span className="text-[9px] text-amber-400/80 font-mono">{fmt(row.payment_amount)} recd.</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-[10px] text-slate-600">
+                          Date:{" "}
+                          <span className="text-slate-500">
+                            {fmtDate(row.sales_date)}
+                          </span>
+                        </div>
+                      </button>
+                      <div className="flex w-12 shrink-0 items-center justify-center">
+                        <button
+                          type="button"
+                          title={wasEmailed ? "Email sent — click to send again" : "Send Email"}
+                          onClick={() => openSendEmailModal(row)}
+                          className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${
+                            wasEmailed
+                              ? "border-green-500/50 bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                              : "border-surface-border/70 bg-white/[0.02] text-slate-400 hover:border-accent/60 hover:bg-accent/10 hover:text-accent"
                           }`}
                         >
-                          {row.invoice_number}
-                        </span>
-                        <span className="truncate text-xs text-slate-400">
-                          {row.company_name ?? "—"}
-                        </span>
-                        <span className="text-right font-mono text-xs text-slate-300">
-                          {fmt(row.total_amount)}
-                        </span>
-                        <div className="flex flex-col items-start gap-0.5">
-                          <StatusBadge status={row.payment_status} />
-                          {row.payment_status === 2 && row.payment_amount != null && (
-                            <span className="text-[9px] text-amber-400/80 font-mono">{fmt(row.payment_amount)} recd.</span>
-                          )}
-                        </div>
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4"
+                          >
+                            <rect x="3" y="5" width="18" height="14" rx="2" />
+                            <path d="m3.5 7 8.5 6 8.5-6" />
+                          </svg>
+                        </button>
                       </div>
-                      <div className="mt-1 text-[10px] text-slate-600">
-                        Date:{" "}
-                        <span className="text-slate-500">
-                          {fmtDate(row.sales_date)}
-                        </span>
-                      </div>
-                    </button>
+                    </div>
                   </li>
                 );
               })}
@@ -1748,6 +1839,122 @@ export default function SalesOrdersPage() {
 
         </div>
       </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          SEND EMAIL MODAL
+      ════════════════════════════════════════════════════════════════════ */}
+      {emailModalRow && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={closeSendEmailModal}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-surface-border bg-[#0d1117] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
+              <p className="text-sm font-semibold text-white">
+                Send Email — {emailModalRow.invoice_number}
+              </p>
+              <button
+                type="button"
+                onClick={closeSendEmailModal}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4 p-6">
+              {emailSentOk ? (
+                <>
+                  <p className="text-sm text-emerald-400">
+                    Email sent successfully to {emailAddress.trim()}.
+                  </p>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={closeSendEmailModal}
+                      className="rounded-lg border border-surface-border px-4 py-2 text-sm text-slate-300 transition hover:border-slate-400 hover:text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              ) : emailMissingDocs !== null ? (
+                <>
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-400">
+                    ⚠{" "}
+                    {emailMissingDocs.length > 0
+                      ? `Missing document${emailMissingDocs.length > 1 ? "s" : ""}: ${emailMissingDocs.join(", ")}.`
+                      : "All documents are attached."}{" "}
+                    Do you still want to send this email?
+                  </div>
+                  {emailError && <ErrorAlert message={emailError} />}
+                  <div className="flex items-center justify-end gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setEmailMissingDocs(null)}
+                      disabled={emailSending}
+                      className="rounded-lg border border-surface-border px-4 py-2 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => submitSendEmail(true)}
+                      disabled={emailSending}
+                      className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {emailSending ? "Sending…" : "Send Anyway"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-500">
+                    Sends the order&rsquo;s item list along with the Sales Invoice,
+                    E-Way Bill, and LR Copy documents (whichever are attached) to
+                    the recipient below.
+                  </p>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Recipient Email
+                    </label>
+                    <input
+                      type="email"
+                      autoFocus
+                      value={emailAddress}
+                      onChange={(e) => setEmailAddress(e.target.value)}
+                      placeholder="customer@company.com"
+                      className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white placeholder-slate-600 outline-none transition focus:border-accent focus:ring-1 focus:ring-accent/30"
+                    />
+                  </div>
+                  {emailError && <ErrorAlert message={emailError} />}
+                  <div className="flex items-center justify-end gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={closeSendEmailModal}
+                      disabled={emailSending}
+                      className="rounded-lg border border-surface-border px-4 py-2 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => submitSendEmail(false)}
+                      disabled={emailSending || !emailAddress.trim()}
+                      className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {emailSending ? "Sending…" : "Send"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
