@@ -66,6 +66,12 @@ type DraftProduct = {
   quantity: string;
 };
 
+type FGConflict = {
+  product_id: number;
+  product_name: string;
+  total_stock: number;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,6 +262,22 @@ export default function WorkOrdersPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
+  // ── Delete state ────────────────────────────────────────────────────────
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // ── Sticker state ────────────────────────────────────────────────────────
+  const [showStickerBar, setShowStickerBar] = useState(false);
+  const [stickerFrom, setStickerFrom] = useState("1");
+  const [stickerTo, setStickerTo] = useState("10");
+  const [stickerError, setStickerError] = useState<string | null>(null);
+
+  // ── Finished goods overlap confirmation ────────────────────────────────
+  const [fgConflicts, setFgConflicts] = useState<FGConflict[]>([]);
+  const [showFgConfirm, setShowFgConfirm] = useState(false);
+  const pendingSavePayloadRef = useRef<{ method: string; json: object } | null>(null);
+
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const [materials, setMaterials] = useState<WOMaterial[] | null>(null);
   const [materialsLoading, setMaterialsLoading] = useState(false);
@@ -438,54 +460,12 @@ export default function WorkOrdersPage() {
   const { sorted: filteredRows, sortKey: woSortKey, sortDir: woSortDir, toggleSort: toggleWOSort } =
     useSortedData<WORow>(rows, "work_order_number");
 
-  // ── Save work order (create or edit) ───────────────────────────────────────
-  async function handleSave(e: FormEvent) {
-    e.preventDefault();
-    setSaveError(null);
+  // ── Shared: perform the actual API save ────────────────────────────────────
+  async function doSave(url: string, options: { method: string; json: object }) {
     setSaving(true);
-
+    setSaveError(null);
     try {
-      const validProducts = draftProducts
-        .filter((p) => p.product_id && p.quantity)
-        .map((p) => ({
-          product_id: parseInt(p.product_id, 10),
-          quantity: parseInt(p.quantity, 10) || 0,
-        }));
-
-      let saved: WODetail;
-      if (isEditing && selectedId !== null) {
-        const payload = {
-          work_order_number: fWONumber.trim(),
-          po_number: fPONumber.trim() || null,
-          po_date: fPODate || null,
-          party_name: fPartyName.trim() || null,
-          creation_date: fCreationDate || null,
-          delivery_date: fDeliveryDate || null,
-          remarks: fRemarks.trim() || null,
-          products: validProducts,
-        };
-        saved = await api<WODetail>(`/api/v1/work-orders/${selectedId}`, {
-          method: "PATCH",
-          json: payload,
-        });
-      } else {
-        const payload = {
-          work_order_number: fWONumber.trim(),
-          po_number: fPONumber.trim() || null,
-          po_date: fPODate || null,
-          party_name: fPartyName.trim() || null,
-          creation_date: fCreationDate || null,
-          delivery_date: fDeliveryDate || null,
-          status: fStatus,
-          remarks: fRemarks.trim() || null,
-          products: validProducts,
-        };
-        saved = await api<WODetail>("/api/v1/work-orders", {
-          method: "POST",
-          json: payload,
-        });
-      }
-
+      const saved = await api<WODetail>(url, options);
       setIsEditing(false);
       resetFormFields();
       setShowForm(false);
@@ -495,13 +475,233 @@ export default function WorkOrdersPage() {
       loadList();
     } catch (err) {
       setSaveError(
-        err instanceof Error
-          ? err.message
-          : "Failed to save work order. Please try again.",
+        err instanceof Error ? err.message : "Failed to save work order. Please try again.",
       );
     } finally {
       setSaving(false);
     }
+  }
+
+  // ── Save work order (create or edit) ───────────────────────────────────────
+  async function handleSave(e: FormEvent) {
+    e.preventDefault();
+    setSaveError(null);
+
+    const validProducts = draftProducts
+      .filter((p) => p.product_id && p.quantity)
+      .map((p) => ({
+        product_id: parseInt(p.product_id, 10),
+        quantity: parseInt(p.quantity, 10) || 0,
+      }));
+
+    if (isEditing && selectedId !== null) {
+      const payload = {
+        work_order_number: fWONumber.trim(),
+        po_number: fPONumber.trim() || null,
+        po_date: fPODate || null,
+        party_name: fPartyName.trim() || null,
+        creation_date: fCreationDate || null,
+        delivery_date: fDeliveryDate || null,
+        remarks: fRemarks.trim() || null,
+        products: validProducts,
+      };
+      await doSave(`/api/v1/work-orders/${selectedId}`, { method: "PATCH", json: payload });
+      return;
+    }
+
+    // ── Create path: check finished goods overlap first ────────────────────
+    const payload = {
+      work_order_number: fWONumber.trim(),
+      po_number: fPONumber.trim() || null,
+      po_date: fPODate || null,
+      party_name: fPartyName.trim() || null,
+      creation_date: fCreationDate || null,
+      delivery_date: fDeliveryDate || null,
+      status: fStatus,
+      remarks: fRemarks.trim() || null,
+      products: validProducts,
+    };
+
+    const productIds = validProducts.map((p) => p.product_id);
+    if (productIds.length > 0) {
+      try {
+        const conflicts = await api<FGConflict[]>(
+          `/api/v1/work-orders/check-fg-overlap?product_ids=${productIds.join(",")}`,
+        );
+        if (conflicts.length > 0) {
+          setFgConflicts(conflicts);
+          pendingSavePayloadRef.current = { method: "POST", json: payload };
+          setShowFgConfirm(true);
+          return;
+        }
+      } catch {
+        // Non-blocking: if the check fails, proceed with save
+      }
+    }
+
+    await doSave("/api/v1/work-orders", { method: "POST", json: payload });
+  }
+
+  // ── Confirmed create despite FG overlap ────────────────────────────────────
+  async function handleFgConfirmProceed() {
+    setShowFgConfirm(false);
+    if (!pendingSavePayloadRef.current) return;
+    const opts = pendingSavePayloadRef.current;
+    pendingSavePayloadRef.current = null;
+    setFgConflicts([]);
+    await doSave("/api/v1/work-orders", opts);
+  }
+
+  function handleFgConfirmCancel() {
+    setShowFgConfirm(false);
+    pendingSavePayloadRef.current = null;
+    setFgConflicts([]);
+  }
+
+  // ── Delete work order ───────────────────────────────────────────────────────
+  async function handleDelete() {
+    if (!selectedId) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api(`/api/v1/work-orders/${selectedId}`, { method: "DELETE" });
+      setRows((prev) => prev.filter((r) => r.id !== selectedId));
+      setTotal((prev) => prev - 1);
+      closePanel();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete work order.");
+      setDeleteConfirming(false);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  // ── Generate & print stickers ───────────────────────────────────────────────
+  function generateAndPrintStickers() {
+    if (!detail) return;
+    setStickerError(null);
+    const from = parseInt(stickerFrom, 10);
+    const to = parseInt(stickerTo, 10);
+    if (isNaN(from) || isNaN(to) || from < 1 || to < from) {
+      setStickerError("Enter a valid range (start ≥ 1, end ≥ start).");
+      return;
+    }
+    if (to - from + 1 > 9999) {
+      setStickerError("Maximum 9999 stickers at a time.");
+      return;
+    }
+
+    const productNames = detail.products.map((p) => p.product_name).join(", ") || "—";
+    const totalQty = detail.products.reduce((s, p) => s + p.quantity, 0);
+
+    // Build array of sticker data as a JSON-safe string embedded in the page
+    const stickersJson = JSON.stringify(
+      Array.from({ length: to - from + 1 }, (_, i) => ({
+        n: from + i,
+        barcode: `${detail.work_order_number}-${String(from + i).padStart(3, "0")}`,
+      }))
+    );
+
+    const escHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stickers — ${escHtml(detail.work_order_number)}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"><\/script>
+<style>
+  @page { size: A4 portrait; margin: 8mm; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #111; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3mm;
+  }
+  .sticker {
+    border: 0.6pt solid #bbb;
+    border-radius: 2pt;
+    padding: 2.5mm 3mm 2mm;
+    height: 42mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2mm;
+    page-break-inside: avoid;
+  }
+  .sticker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .wo-num { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.03em; }
+  .serial { font-size: 8.5pt; font-weight: 800; color: #333; }
+  .sticker svg { width: 100%; height: 16mm; }
+  .divider { border: none; border-top: 0.4pt solid #ddd; }
+  .info-row { font-size: 6.5pt; line-height: 1.45; color: #333; }
+  .info-row span { font-weight: 600; color: #000; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="grid" id="grid"></div>
+<script>
+  const stickers = ${stickersJson};
+  const grid = document.getElementById('grid');
+  const wo = ${JSON.stringify(detail.work_order_number)};
+  const party = ${JSON.stringify(detail.party_name ?? "—")};
+  const products = ${JSON.stringify(productNames)};
+  const totalQty = ${totalQty};
+  const poNum = ${JSON.stringify(detail.po_number ?? "")};
+  const deliveryDate = ${JSON.stringify(detail.delivery_date ? new Date(detail.delivery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "")};
+
+  stickers.forEach(s => {
+    const d = document.createElement('div');
+    d.className = 'sticker';
+    d.innerHTML =
+      '<div class="sticker-header">' +
+        '<span class="wo-num">' + wo + '</span>' +
+        '<span class="serial">#' + s.n + '</span>' +
+      '</div>' +
+      '<svg id="bc' + s.n + '"></svg>' +
+      '<hr class="divider">' +
+      '<div class="info-row"><span>Party:</span> ' + party + '</div>' +
+      '<div class="info-row"><span>Products:</span> ' + products + '</div>' +
+      (poNum ? '<div class="info-row"><span>PO:</span> ' + poNum + '</div>' : '') +
+      (deliveryDate ? '<div class="info-row"><span>Delivery:</span> ' + deliveryDate + '</div>' : '') +
+      '<div class="info-row"><span>Total qty:</span> ' + totalQty + '</div>';
+    grid.appendChild(d);
+  });
+
+  stickers.forEach(s => {
+    JsBarcode('#bc' + s.n, s.barcode, {
+      format: 'CODE128',
+      height: 32,
+      fontSize: 7,
+      margin: 1,
+      displayValue: true,
+      lineColor: '#000',
+      background: '#fff',
+    });
+  });
+
+  window.addEventListener('load', () => window.print());
+<\/script>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) {
+      setStickerError("Pop-up blocked. Please allow pop-ups for this site and try again.");
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    setShowStickerBar(false);
   }
 
   // ── Mark as complete ────────────────────────────────────────────────────────
@@ -614,12 +814,71 @@ export default function WorkOrdersPage() {
     setDetail(null);
     setDetailError(null);
     setSaveError(null);
+    setDeleteConfirming(false);
+    setDeleteError(null);
+    setShowStickerBar(false);
+    setStickerError(null);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────────
   return (
+    <>
+    {/* ── Finished Goods overlap confirmation modal ─────────────────────────── */}
+    {showFgConfirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-xl border border-amber-500/40 bg-[#151c27] p-6 shadow-2xl">
+          <div className="mb-4 flex items-start gap-3">
+            <span className="mt-0.5 text-xl text-amber-400">⚠</span>
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                Product already in Finished Goods
+              </h3>
+              <p className="mt-1 text-xs text-slate-400">
+                The following product{fgConflicts.length > 1 ? "s" : ""} already{" "}
+                {fgConflicts.length > 1 ? "have" : "has"} existing stock in Finished Goods.
+                Do you still want to create this work order?
+              </p>
+            </div>
+          </div>
+          <ul className="mb-5 divide-y divide-surface-border/40 rounded-lg border border-surface-border bg-[#0f1419]">
+            {fgConflicts.map((c) => (
+              <li key={c.product_id} className="flex items-center justify-between px-4 py-2.5">
+                <span className="text-sm text-white">{c.product_name}</span>
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-400">
+                  {c.total_stock} in stock
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleFgConfirmCancel}
+              className="rounded-lg px-4 py-2 text-sm text-slate-400 transition-colors hover:text-white"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleFgConfirmProceed}
+              disabled={saving}
+              className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? (
+                <>
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+                  Creating…
+                </>
+              ) : (
+                "Yes, create anyway"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     <div
       className="flex h-[calc(100vh-7rem)] min-h-0 gap-5"
       style={{ background: "var(--color-bg-base)" }}
@@ -1067,6 +1326,41 @@ export default function WorkOrdersPage() {
                 >
                   Edit
                 </button>
+                {/* Delete — two-step inline confirm */}
+                {!deleteConfirming ? (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirming(true)}
+                    className="rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-semibold text-red-400 transition-colors hover:border-red-500/60 hover:bg-red-500/10"
+                  >
+                    Delete
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={deleting}
+                      className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deleting ? (
+                        <>
+                          <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                          Deleting…
+                        </>
+                      ) : (
+                        "Confirm delete"
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDeleteConfirming(false); setDeleteError(null); }}
+                      className="rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
                 {detail?.status === "in-progress" && (
                   <button
                     type="button"
@@ -1099,8 +1393,57 @@ export default function WorkOrdersPage() {
                     <>↓ PDF</>
                   )}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowStickerBar((v) => !v); setStickerError(null); }}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${showStickerBar ? "border-violet-500/60 bg-violet-500/15 text-violet-300" : "border-surface-border text-slate-300 hover:border-slate-400 hover:text-white"}`}
+                >
+                  🏷 Stickers
+                </button>
               </div>
             </div>
+
+            {/* ── Sticker number range bar ──────────────────────────────────── */}
+            {showStickerBar && (
+              <div className="shrink-0 border-b border-surface-border/60 bg-violet-500/5 px-5 py-2.5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[11px] font-semibold text-violet-300">Print stickers</span>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[11px] text-slate-400">From</label>
+                    <input
+                      type="number" min={1} value={stickerFrom}
+                      onChange={(e) => setStickerFrom(e.target.value)}
+                      className="w-16 rounded border border-surface-border bg-[#0b0f14] px-2 py-1 text-[11px] text-white outline-none focus:border-violet-500/60"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[11px] text-slate-400">To</label>
+                    <input
+                      type="number" min={1} value={stickerTo}
+                      onChange={(e) => setStickerTo(e.target.value)}
+                      className="w-16 rounded border border-surface-border bg-[#0b0f14] px-2 py-1 text-[11px] text-white outline-none focus:border-violet-500/60"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={generateAndPrintStickers}
+                    className="rounded-lg bg-violet-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-violet-500 transition-colors"
+                  >
+                    Generate &amp; Print
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowStickerBar(false); setStickerError(null); }}
+                    className="text-[11px] text-slate-500 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  {stickerError && (
+                    <span className="text-[11px] text-red-400">{stickerError}</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {detailLoading && (
@@ -1127,6 +1470,11 @@ export default function WorkOrdersPage() {
               {completeError && (
                 <div className="mb-4">
                   <ErrorAlert message={completeError} />
+                </div>
+              )}
+              {deleteError && (
+                <div className="mb-4">
+                  <ErrorAlert message={deleteError} />
                 </div>
               )}
               {pdfError && (
@@ -1356,5 +1704,6 @@ export default function WorkOrdersPage() {
       </div>
       )}
     </div>
+    </>
   );
 }
