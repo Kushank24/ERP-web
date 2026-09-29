@@ -1,5 +1,5 @@
-function Pulse({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded bg-surface-border/30 ${className}`} />;
+function Pulse({ className = "", style }: { className?: string; style?: React.CSSProperties }) {
+  return <div className={`animate-pulse rounded bg-surface-border/30 ${className}`} style={style} />;
 }
 
 export default function InventoryLoading() {
