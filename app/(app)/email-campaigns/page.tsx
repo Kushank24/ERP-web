@@ -1,8 +1,18 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, useEffect, useRef, useCallback, FormEvent, ChangeEvent } from "react";
 import { api, apiFormData, API } from "@/lib/api";
-import { RichTextEditor } from "@/components/RichTextEditor";
+
+const RichTextEditor = dynamic(
+  () => import("@/components/RichTextEditor").then(m => ({ default: m.RichTextEditor })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-[280px] animate-pulse rounded-lg border border-surface-border bg-surface-border/20" />
+    ),
+  },
+);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,8 +113,10 @@ export default function EmailCampaignsPage() {
     api<ActiveStatus>("/api/v1/email-campaigns/active")
       .then(d => {
         setActive(d);
-        if (!d.running) {
-          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        if (!d.running && pollRef.current) {
+          // Campaign just stopped while we were polling — stop polling and refresh list.
+          clearInterval(pollRef.current);
+          pollRef.current = null;
           loadList();
         }
       })
