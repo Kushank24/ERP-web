@@ -594,16 +594,16 @@ export default function WorkOrdersPage() {
     const productNames = detail.products.map((p) => p.product_name).join(", ") || "—";
     const totalQty = detail.products.reduce((s, p) => s + p.quantity, 0);
 
+    const escHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
     // Build array of sticker data as a JSON-safe string embedded in the page
     const stickersJson = JSON.stringify(
       Array.from({ length: to - from + 1 }, (_, i) => ({
         n: from + i,
-        barcode: `${detail.work_order_number}-${String(from + i).padStart(3, "0")}`,
+        barcode: `${escHtml(detail.work_order_number)}-${String(from + i).padStart(3, "0")}`,
       }))
     );
-
-    const escHtml = (s: string) =>
-      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -652,11 +652,11 @@ export default function WorkOrdersPage() {
 <script>
   const stickers = ${stickersJson};
   const grid = document.getElementById('grid');
-  const wo = ${JSON.stringify(detail.work_order_number)};
-  const party = ${JSON.stringify(detail.party_name ?? "—")};
-  const products = ${JSON.stringify(productNames)};
+  const wo = ${JSON.stringify(escHtml(detail.work_order_number))};
+  const party = ${JSON.stringify(escHtml(detail.party_name ?? "—"))};
+  const products = ${JSON.stringify(escHtml(productNames))};
   const totalQty = ${totalQty};
-  const poNum = ${JSON.stringify(detail.po_number ?? "")};
+  const poNum = ${JSON.stringify(escHtml(detail.po_number ?? ""))};
   const deliveryDate = ${JSON.stringify(detail.delivery_date ? new Date(detail.delivery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "")};
 
   stickers.forEach(s => {

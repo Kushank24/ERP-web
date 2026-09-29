@@ -399,6 +399,8 @@ export default function SalesOrdersPage() {
   // ── Send Email modal ────────────────────────────────────────────────────────
   const [emailModalRow, setEmailModalRow] = useState<SORow | null>(null);
   const [emailAddress, setEmailAddress] = useState("");
+  const [emailCc, setEmailCc] = useState("");
+  const [emailBcc, setEmailBcc] = useState("");
   // null = address-entry step; non-null (possibly empty array) = "some
   // documents are missing, send anyway?" confirmation step.
   const [emailMissingDocs, setEmailMissingDocs] = useState<string[] | null>(null);
@@ -413,6 +415,8 @@ export default function SalesOrdersPage() {
   function openSendEmailModal(row: SORow) {
     setEmailModalRow(row);
     setEmailAddress("");
+    setEmailCc("");
+    setEmailBcc("");
     setEmailMissingDocs(null);
     setEmailError(null);
     setEmailSentOk(false);
@@ -433,7 +437,15 @@ export default function SalesOrdersPage() {
     try {
       const res = await api<SendEmailResponse>(
         `/api/v1/sales-orders/${emailModalRow.id}/send-email`,
-        { method: "POST", json: { to_email: emailAddress.trim(), force } },
+        {
+          method: "POST",
+          json: {
+            to_email: emailAddress.trim(),
+            force,
+            cc_emails: emailCc.trim() || null,
+            bcc_emails: emailBcc.trim() || null,
+          },
+        },
       );
       if (res.status === "missing_documents") {
         setEmailMissingDocs(res.missing ?? []);
@@ -1928,6 +1940,30 @@ export default function SalesOrdersPage() {
                       value={emailAddress}
                       onChange={(e) => setEmailAddress(e.target.value)}
                       placeholder="customer@company.com"
+                      className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white placeholder-slate-600 outline-none transition focus:border-accent focus:ring-1 focus:ring-accent/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      CC <span className="normal-case font-normal text-slate-600">(comma-separated)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={emailCc}
+                      onChange={(e) => setEmailCc(e.target.value)}
+                      placeholder="cc1@company.com, cc2@company.com"
+                      className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white placeholder-slate-600 outline-none transition focus:border-accent focus:ring-1 focus:ring-accent/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      BCC <span className="normal-case font-normal text-slate-600">(comma-separated)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={emailBcc}
+                      onChange={(e) => setEmailBcc(e.target.value)}
+                      placeholder="bcc1@company.com, bcc2@company.com"
                       className="w-full rounded-lg border border-surface-border bg-[#0b0f14] px-3 py-2 text-sm text-white placeholder-slate-600 outline-none transition focus:border-accent focus:ring-1 focus:ring-accent/30"
                     />
                   </div>
