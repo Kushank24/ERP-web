@@ -60,7 +60,7 @@ export async function api<T>(
     ...(opts.headers as Record<string, string>),
   };
 
-  const token = await getSupabaseAccessToken();
+  const token = _accessToken ?? await getSupabaseAccessToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let body = opts.body;
@@ -100,7 +100,7 @@ export async function apiFormData<T>(
   method: "POST" | "PUT" | "PATCH" = "POST",
 ): Promise<T> {
   const headers: Record<string, string> = {};
-  const token = await getSupabaseAccessToken();
+  const token = _accessToken ?? await getSupabaseAccessToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API}${path}`, { method, headers, body: formData });
@@ -131,7 +131,7 @@ export async function apiBlob(
   const headers: Record<string, string> = {
     ...(opts.headers as Record<string, string>),
   };
-  const token = await getSupabaseAccessToken();
+  const token = _accessToken ?? await getSupabaseAccessToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API}${path}`, { ...opts, headers });

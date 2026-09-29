@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, FormEvent } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, FormEvent } from "react";
 import { api } from "@/lib/api";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,11 +204,13 @@ export default function FinishedGoodsPage() {
   const [returnError, setReturnError] = useState<string | null>(null);
   const [rvFoundPrice, setRvFoundPrice] = useState<number | null>(null);
 
-  // When material name changes, look up its price in inventory
+  // When material name changes, look up its price in inventory (debounced)
+  const rvMatDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (rvMatDebounceRef.current) clearTimeout(rvMatDebounceRef.current);
     if (!rvMatName.trim()) { setRvFoundPrice(null); return; }
     let cancelled = false;
-    (async () => {
+    rvMatDebounceRef.current = setTimeout(async () => {
       try {
         const res = await api<{ items: { name: string; per_unit_cost: number; unit: string }[] }>(
           `/api/v1/materials?q=${encodeURIComponent(rvMatName.trim())}&limit=20`
@@ -225,8 +227,8 @@ export default function FinishedGoodsPage() {
           setRvFoundPrice(null);
         }
       } catch { if (!cancelled) setRvFoundPrice(null); }
-    })();
-    return () => { cancelled = true; };
+    }, 300);
+    return () => { cancelled = true; if (rvMatDebounceRef.current) clearTimeout(rvMatDebounceRef.current); };
   }, [rvMatName]);
 
   function openReturn(row: FGRow) {
@@ -312,7 +314,8 @@ export default function FinishedGoodsPage() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => { loadData(""); loadWOs(); }, [loadData, loadWOs]);
+  useEffect(() => { loadData(""); }, [loadData]);
+  useEffect(() => { if (formOpen) loadWOs(); }, [formOpen, loadWOs]);
 
   // Debounce search → refetch
   const fgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -411,18 +414,12 @@ export default function FinishedGoodsPage() {
   }
 
   // ── Computed stats ──────────────────────────────────────────────────────────
-  const totalSKUs = rows.length;
-  const totalUnits = rows.reduce(
-    (acc, r) => acc + (r.quantity_in_stock ?? 0),
-    0,
-  );
-  const totalValue = rows.reduce(
-    (acc, r) => acc + (r.quantity_in_stock ?? 0) * (r.production_cost ?? 0),
-    0,
-  );
-  const lowStockCount = rows.filter(
-    (r) => r.quantity_in_stock < LOW_STOCK_THRESHOLD,
-  ).length;
+  const { totalSKUs, totalUnits, totalValue, lowStockCount } = useMemo(() => ({
+    totalSKUs: rows.length,
+    totalUnits: rows.reduce((acc, r) => acc + (r.quantity_in_stock ?? 0), 0),
+    totalValue: rows.reduce((acc, r) => acc + (r.quantity_in_stock ?? 0) * (r.production_cost ?? 0), 0),
+    lowStockCount: rows.filter((r) => r.quantity_in_stock < LOW_STOCK_THRESHOLD).length,
+  }), [rows]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Render

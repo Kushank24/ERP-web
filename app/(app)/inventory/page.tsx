@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
@@ -182,10 +182,10 @@ export default function InventoryPage() {
   }, [search, load]);
 
   type MaterialWithTotal = Material & { total_value: number };
-  const materialsWithTotal: MaterialWithTotal[] = materials.map(m => ({
-    ...m,
-    total_value: m.length_weight_nos * m.per_unit_cost,
-  }));
+  const materialsWithTotal = useMemo<MaterialWithTotal[]>(
+    () => materials.map(m => ({ ...m, total_value: m.length_weight_nos * m.per_unit_cost })),
+    [materials],
+  );
   const { sorted: filtered, sortKey: invSortKey, sortDir: invSortDir, toggleSort: toggleInvSort } =
     useSortedData<MaterialWithTotal>(materialsWithTotal, "name");
 
