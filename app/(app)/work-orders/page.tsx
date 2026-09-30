@@ -596,23 +596,23 @@ export default function WorkOrdersPage() {
     const escHtml = (s: string) =>
       s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-    // Build one sticker entry per product-unit: globally serial-numbered,
-    // carrying only its own product name and "n of total" counter.
-    type StickerEntry = { globalN: number; productOf: string; productName: string; barcode: string };
+    // Build one sticker entry per product-unit. Each product's counter
+    // restarts from 1. Barcodes stay globally unique by including the
+    // product index (P1, P2, …) in the barcode string.
+    type StickerEntry = { id: string; productOf: string; productName: string; barcode: string };
     const stickers: StickerEntry[] = [];
-    let globalN = 1;
-    for (const p of detail.products) {
+    detail.products.forEach((p, pIdx) => {
       const qty = Math.max(0, Math.round(p.quantity));
       for (let i = 1; i <= qty; i++) {
+        const id = `p${pIdx + 1}-${i}`;
         stickers.push({
-          globalN,
+          id,
           productOf: `${i} of ${qty}`,
           productName: escHtml(p.product_name),
-          barcode: `${escHtml(detail.work_order_number)}-${String(globalN).padStart(3, "0")}`,
+          barcode: `${escHtml(detail.work_order_number)}-P${pIdx + 1}-${String(i).padStart(3, "0")}`,
         });
-        globalN++;
       }
-    }
+    });
 
     const poDate = detail.po_date
       ? new Date(detail.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
@@ -676,12 +676,11 @@ export default function WorkOrdersPage() {
     d.innerHTML =
       '<div class="sticker-header">' +
         '<span class="wo-num">' + wo + '</span>' +
-        '<span class="serial">#' + s.globalN + '</span>' +
+        '<span class="serial">' + s.productOf + '</span>' +
       '</div>' +
-      '<svg id="bc' + s.globalN + '"></svg>' +
+      '<svg id="bc' + s.id + '"></svg>' +
       '<hr class="divider">' +
       '<div class="info-row"><span>Product:</span> ' + s.productName + '</div>' +
-      '<div class="info-row"><span>Qty:</span> ' + s.productOf + '</div>' +
       '<div class="info-row"><span>Party:</span> ' + party + '</div>' +
       (poNum  ? '<div class="info-row"><span>PO #:</span> '    + poNum  + '</div>' : '') +
       (poDate ? '<div class="info-row"><span>PO Date:</span> ' + poDate + '</div>' : '');
@@ -689,7 +688,7 @@ export default function WorkOrdersPage() {
   });
 
   stickers.forEach(s => {
-    JsBarcode('#bc' + s.globalN, s.barcode, {
+    JsBarcode('#bc' + s.id, s.barcode, {
       format: 'CODE128',
       height: 32,
       fontSize: 7,
