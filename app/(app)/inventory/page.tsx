@@ -25,6 +25,36 @@ type EditDraft = {
   cost: string;
 };
 
+type PurchaseHistoryRow = {
+  po_id: number;
+  purchase_number: string | null;
+  purchase_date: string | null;
+  supplier_name: string | null;
+  supplier_location: string | null;
+  supplier_contact: string | null;
+  quantity_ordered: number;
+  quantity_delivered: number | null;
+  per_unit_cost: number;
+  unit: string;
+  comment: string | null;
+};
+
+type UsageHistoryRow = {
+  wo_id: number;
+  work_order_number: string;
+  party_name: string | null;
+  completed_at: string | null;
+  delivery_date: string | null;
+  quantity_consumed: number;
+  boq_unit: string | null;
+};
+
+type MaterialHistory = {
+  material: { id: number; name: string; unit: string };
+  purchases: PurchaseHistoryRow[];
+  usages: UsageHistoryRow[];
+};
+
 /* ─────────────────────────────────────────────────────────────────────────────
    Constants
 ───────────────────────────────────────────────────────────────────────────── */
@@ -138,6 +168,28 @@ export default function InventoryPage() {
   const [addCost, setAddCost] = useState("");
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  /* ── History panel ───────────────────────────────────────────────────── */
+  const [historyTarget, setHistoryTarget] = useState<Material | null>(null);
+  const [history, setHistory] = useState<MaterialHistory | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  function openHistory(m: Material) {
+    setHistoryTarget(m);
+    setHistory(null);
+    setHistoryError(null);
+    setHistoryLoading(true);
+    api<MaterialHistory>(`/api/v1/materials/${m.id}/history`)
+      .then(setHistory)
+      .catch((e: Error) => setHistoryError(e.message ?? "Failed to load history"))
+      .finally(() => setHistoryLoading(false));
+  }
+
+  function closeHistory() {
+    setHistoryTarget(null);
+    setHistory(null);
+  }
 
   /* ── Convert to Finished Good modal ─────────────────────────────────── */
   const [convertTarget, setConvertTarget] = useState<Material | null>(null);
@@ -656,10 +708,14 @@ export default function InventoryPage() {
                         {idx + 1}
                       </td>
 
-                      {/* Name + low-stock warning icon */}
+                      {/* Name + low-stock warning icon — click to view history */}
                       <td className="px-4 py-3.5 font-medium text-white">
-                        <span className="flex items-center gap-2">
-                          {m.name}
+                        <button
+                          type="button"
+                          onClick={() => openHistory(m)}
+                          className="flex items-center gap-2 text-left hover:text-sky-400 transition-colors group"
+                        >
+                          <span className="group-hover:underline underline-offset-2">{m.name}</span>
                           {isLow && (
                             <span
                               title={`Low stock: only ${m.length_weight_nos} ${m.unit} remaining`}
@@ -668,7 +724,7 @@ export default function InventoryPage() {
                               ⚠
                             </span>
                           )}
-                        </span>
+                        </button>
                       </td>
 
                       {/* Qty — amber when low */}
@@ -704,6 +760,14 @@ export default function InventoryPage() {
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            title="View purchase & usage history"
+                            onClick={() => openHistory(m)}
+                            className="rounded-md border border-surface-border/70 px-2.5 py-1 text-xs font-medium text-slate-400 transition hover:border-sky-500/50 hover:bg-sky-500/10 hover:text-sky-400"
+                          >
+                            History
+                          </button>
                           <button
                             type="button"
                             title="Convert to Finished Good"
@@ -927,6 +991,167 @@ export default function InventoryPage() {
           </>
         )}
       </div>
+
+      {/* ════════════════════════════════════════════════════════════════
+          Material History — slide-in panel
+      ════════════════════════════════════════════════════════════════ */}
+      {historyTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50 backdrop-blur-sm"
+          onClick={closeHistory}
+        >
+          <div
+            className="flex w-full max-w-2xl flex-col overflow-hidden border-l border-surface-border bg-[#0d1117] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Panel header */}
+            <div className="flex shrink-0 items-start justify-between border-b border-surface-border px-6 py-4">
+              <div className="min-w-0 pr-4">
+                <h2 className="text-sm font-semibold text-white truncate">{historyTarget.name}</h2>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  In stock: <span className="text-slate-300 font-medium">{historyTarget.length_weight_nos} {historyTarget.unit}</span>
+                  {" · "}Cost/unit: <span className="text-slate-300 font-medium">{fmtINR(historyTarget.per_unit_cost)}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeHistory}
+                className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+              >✕</button>
+            </div>
+
+            {/* Panel body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              {historyError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                  ⚠ {historyError}
+                </div>
+              )}
+
+              {historyLoading && (
+                <div className="space-y-6">
+                  {[1, 2].map((s) => (
+                    <div key={s} className="space-y-3">
+                      <div className="h-4 w-40 animate-pulse rounded bg-surface-border/50" />
+                      <div className="h-24 animate-pulse rounded-xl bg-surface-border/30" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!historyLoading && history && (
+                <>
+                  {/* ── Purchase History ── */}
+                  <section>
+                    <div className="mb-3 flex items-center gap-2">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                        Purchase History
+                      </h3>
+                      <span className="rounded-full bg-surface-border px-2 py-0.5 text-[10px] text-slate-400">
+                        {history.purchases.length}
+                      </span>
+                    </div>
+                    {history.purchases.length === 0 ? (
+                      <p className="rounded-xl border border-surface-border/50 bg-[#0f1419] px-4 py-6 text-center text-xs text-slate-600">
+                        No purchase records found for this material.
+                      </p>
+                    ) : (
+                      <div className="overflow-hidden rounded-xl border border-surface-border">
+                        <table className="w-full text-left text-xs">
+                          <thead className="border-b border-surface-border bg-[#0f1419]/80">
+                            <tr>
+                              {["Date", "PO #", "Supplier", "Qty Ordered", "Qty Delivered", "Rate"].map((h) => (
+                                <th key={h} className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {history.purchases.map((p, i) => (
+                              <tr key={p.po_id + "-" + i} className={`border-t border-surface-border/40 ${i % 2 === 1 ? "bg-white/[0.015]" : ""}`}>
+                                <td className="px-3 py-2.5 text-slate-300 whitespace-nowrap">
+                                  {p.purchase_date ? new Date(p.purchase_date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—"}
+                                </td>
+                                <td className="px-3 py-2.5 font-mono text-slate-300">{p.purchase_number ?? "—"}</td>
+                                <td className="px-3 py-2.5">
+                                  <span className="font-medium text-white">{p.supplier_name ?? "—"}</span>
+                                  {p.supplier_location && (
+                                    <span className="block text-[10px] text-slate-600">{p.supplier_location}</span>
+                                  )}
+                                  {p.supplier_contact && (
+                                    <span className="block text-[10px] text-slate-600">{p.supplier_contact}</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 tabular-nums text-slate-300">
+                                  {p.quantity_ordered} <span className="text-slate-600">{p.unit}</span>
+                                </td>
+                                <td className="px-3 py-2.5 tabular-nums">
+                                  {p.quantity_delivered != null ? (
+                                    <span className={p.quantity_delivered >= p.quantity_ordered ? "text-emerald-400" : "text-amber-400"}>
+                                      {p.quantity_delivered} <span className="text-slate-600">{p.unit}</span>
+                                    </span>
+                                  ) : "—"}
+                                </td>
+                                <td className="px-3 py-2.5 tabular-nums font-medium text-white">
+                                  {fmtINR(p.per_unit_cost)}<span className="text-[10px] text-slate-600">/{p.unit}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* ── Work Order Usage ── */}
+                  <section>
+                    <div className="mb-3 flex items-center gap-2">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                        Work Order Usage
+                      </h3>
+                      <span className="rounded-full bg-surface-border px-2 py-0.5 text-[10px] text-slate-400">
+                        {history.usages.length}
+                      </span>
+                      <span className="text-[10px] text-slate-600">(completed orders only)</span>
+                    </div>
+                    {history.usages.length === 0 ? (
+                      <p className="rounded-xl border border-surface-border/50 bg-[#0f1419] px-4 py-6 text-center text-xs text-slate-600">
+                        This material has not been consumed by any completed work order yet.
+                      </p>
+                    ) : (
+                      <div className="overflow-hidden rounded-xl border border-surface-border">
+                        <table className="w-full text-left text-xs">
+                          <thead className="border-b border-surface-border bg-[#0f1419]/80">
+                            <tr>
+                              {["Work Order #", "Party", "Completed", "Qty Used"].map((h) => (
+                                <th key={h} className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {history.usages.map((u, i) => (
+                              <tr key={u.wo_id} className={`border-t border-surface-border/40 ${i % 2 === 1 ? "bg-white/[0.015]" : ""}`}>
+                                <td className="px-3 py-2.5 font-mono font-medium text-white">{u.work_order_number}</td>
+                                <td className="px-3 py-2.5 text-slate-300">{u.party_name ?? "—"}</td>
+                                <td className="px-3 py-2.5 text-slate-300 whitespace-nowrap">
+                                  {u.completed_at ? new Date(u.completed_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—"}
+                                </td>
+                                <td className="px-3 py-2.5 tabular-nums font-semibold text-red-400">
+                                  −{Number(u.quantity_consumed).toFixed(4).replace(/\.?0+$/, "")}
+                                  <span className="ml-1 font-normal text-slate-600">{u.boq_unit ?? historyTarget.unit}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════════════
           Convert to Finished Good — modal overlay
