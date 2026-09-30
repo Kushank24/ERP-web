@@ -708,10 +708,14 @@ export default function InventoryPage() {
                         {idx + 1}
                       </td>
 
-                      {/* Name + low-stock warning icon */}
+                      {/* Name + low-stock warning icon — click to view history */}
                       <td className="px-4 py-3.5 font-medium text-white">
-                        <span className="flex items-center gap-2">
-                          {m.name}
+                        <button
+                          type="button"
+                          onClick={() => openHistory(m)}
+                          className="flex items-center gap-2 text-left hover:text-sky-400 transition-colors group"
+                        >
+                          <span className="group-hover:underline underline-offset-2">{m.name}</span>
                           {isLow && (
                             <span
                               title={`Low stock: only ${m.length_weight_nos} ${m.unit} remaining`}
@@ -720,7 +724,7 @@ export default function InventoryPage() {
                               ⚠
                             </span>
                           )}
-                        </span>
+                        </button>
                       </td>
 
                       {/* Qty — amber when low */}
