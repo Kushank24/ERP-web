@@ -21,6 +21,7 @@ type SORow = {
   sales_date: string | null;
   payment_received?: boolean;
   payment_amount: number | null;
+  email_last_sent_at: string | null;
 };
 
 type SOLine = {
@@ -407,9 +408,9 @@ export default function SalesOrdersPage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSentOk, setEmailSentOk] = useState(false);
-  // Sales order ids a Send Email has succeeded for in this session — drives
-  // the green "sent" state on the row's mail button. Not persisted server
-  // side, so it resets on reload.
+  // Tracks rows that had an email sent this session so the button turns green
+  // immediately without waiting for a list reload. The source of truth is
+  // email_last_sent_at on each SORow (populated from the DB).
   const [emailSentRowIds, setEmailSentRowIds] = useState<Set<number>>(new Set());
 
   function openSendEmailModal(row: SORow) {
@@ -453,6 +454,13 @@ export default function SalesOrdersPage() {
         setEmailSentOk(true);
         setEmailMissingDocs(null);
         setEmailSentRowIds((prev) => new Set(prev).add(emailModalRow.id));
+        // Stamp the row in local state so the button turns green immediately.
+        const sentAt = new Date().toISOString();
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === emailModalRow.id ? { ...r, email_last_sent_at: sentAt } : r,
+          ),
+        );
       }
     } catch (e: unknown) {
       setEmailError(e instanceof Error ? e.message : "Failed to send email");
@@ -862,7 +870,7 @@ export default function SalesOrdersPage() {
             <ul>
               {filteredRows.map((row) => {
                 const isActive = row.id === selectedId;
-                const wasEmailed = emailSentRowIds.has(row.id);
+                const wasEmailed = row.email_last_sent_at != null || emailSentRowIds.has(row.id);
                 return (
                   <li key={row.id}>
                     <div
