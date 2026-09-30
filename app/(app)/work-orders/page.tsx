@@ -269,8 +269,6 @@ export default function WorkOrdersPage() {
 
   // ── Sticker state ────────────────────────────────────────────────────────
   const [showStickerBar, setShowStickerBar] = useState(false);
-  const [stickerFrom, setStickerFrom] = useState("1");
-  const [stickerTo, setStickerTo] = useState("10");
   const [stickerError, setStickerError] = useState<string | null>(null);
 
   // ── Finished goods overlap confirmation ────────────────────────────────
@@ -580,30 +578,45 @@ export default function WorkOrdersPage() {
   function generateAndPrintStickers() {
     if (!detail) return;
     setStickerError(null);
-    const from = parseInt(stickerFrom, 10);
-    const to = parseInt(stickerTo, 10);
-    if (isNaN(from) || isNaN(to) || from < 1 || to < from) {
-      setStickerError("Enter a valid range (start ≥ 1, end ≥ start).");
-      return;
-    }
-    if (to - from + 1 > 9999) {
-      setStickerError("Maximum 9999 stickers at a time.");
-      return;
-    }
 
-    const productNames = detail.products.map((p) => p.product_name).join(", ") || "—";
-    const totalQty = detail.products.reduce((s, p) => s + p.quantity, 0);
+    if (!detail.products.length) {
+      setStickerError("No products on this work order.");
+      return;
+    }
+    const totalStickers = detail.products.reduce((s, p) => s + Math.max(0, Math.round(p.quantity)), 0);
+    if (totalStickers === 0) {
+      setStickerError("All product quantities are zero.");
+      return;
+    }
+    if (totalStickers > 9999) {
+      setStickerError("Total sticker count exceeds 9999. Reduce quantities.");
+      return;
+    }
 
     const escHtml = (s: string) =>
       s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-    // Build array of sticker data as a JSON-safe string embedded in the page
-    const stickersJson = JSON.stringify(
-      Array.from({ length: to - from + 1 }, (_, i) => ({
-        n: from + i,
-        barcode: `${escHtml(detail.work_order_number)}-${String(from + i).padStart(3, "0")}`,
-      }))
-    );
+    // Build one sticker entry per product-unit: globally serial-numbered,
+    // carrying only its own product name and "n of total" counter.
+    type StickerEntry = { globalN: number; productOf: string; productName: string; barcode: string };
+    const stickers: StickerEntry[] = [];
+    let globalN = 1;
+    for (const p of detail.products) {
+      const qty = Math.max(0, Math.round(p.quantity));
+      for (let i = 1; i <= qty; i++) {
+        stickers.push({
+          globalN,
+          productOf: `${i} of ${qty}`,
+          productName: escHtml(p.product_name),
+          barcode: `${escHtml(detail.work_order_number)}-${String(globalN).padStart(3, "0")}`,
+        });
+        globalN++;
+      }
+    }
+
+    const poDate = detail.po_date
+      ? new Date(detail.po_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+      : "";
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -650,14 +663,12 @@ export default function WorkOrdersPage() {
 <body>
 <div class="grid" id="grid"></div>
 <script>
-  const stickers = ${stickersJson};
+  const stickers = ${JSON.stringify(stickers)};
   const grid = document.getElementById('grid');
-  const wo = ${JSON.stringify(escHtml(detail.work_order_number))};
+  const wo    = ${JSON.stringify(escHtml(detail.work_order_number))};
   const party = ${JSON.stringify(escHtml(detail.party_name ?? "—"))};
-  const products = ${JSON.stringify(escHtml(productNames))};
-  const totalQty = ${totalQty};
   const poNum = ${JSON.stringify(escHtml(detail.po_number ?? ""))};
-  const deliveryDate = ${JSON.stringify(detail.delivery_date ? new Date(detail.delivery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "")};
+  const poDate = ${JSON.stringify(poDate)};
 
   stickers.forEach(s => {
     const d = document.createElement('div');
@@ -665,20 +676,20 @@ export default function WorkOrdersPage() {
     d.innerHTML =
       '<div class="sticker-header">' +
         '<span class="wo-num">' + wo + '</span>' +
-        '<span class="serial">#' + s.n + '</span>' +
+        '<span class="serial">#' + s.globalN + '</span>' +
       '</div>' +
-      '<svg id="bc' + s.n + '"></svg>' +
+      '<svg id="bc' + s.globalN + '"></svg>' +
       '<hr class="divider">' +
+      '<div class="info-row"><span>Product:</span> ' + s.productName + '</div>' +
+      '<div class="info-row"><span>Qty:</span> ' + s.productOf + '</div>' +
       '<div class="info-row"><span>Party:</span> ' + party + '</div>' +
-      '<div class="info-row"><span>Products:</span> ' + products + '</div>' +
-      (poNum ? '<div class="info-row"><span>PO:</span> ' + poNum + '</div>' : '') +
-      (deliveryDate ? '<div class="info-row"><span>Delivery:</span> ' + deliveryDate + '</div>' : '') +
-      '<div class="info-row"><span>Total qty:</span> ' + totalQty + '</div>';
+      (poNum  ? '<div class="info-row"><span>PO #:</span> '    + poNum  + '</div>' : '') +
+      (poDate ? '<div class="info-row"><span>PO Date:</span> ' + poDate + '</div>' : '');
     grid.appendChild(d);
   });
 
   stickers.forEach(s => {
-    JsBarcode('#bc' + s.n, s.barcode, {
+    JsBarcode('#bc' + s.globalN, s.barcode, {
       format: 'CODE128',
       height: 32,
       fontSize: 7,
@@ -1403,27 +1414,24 @@ export default function WorkOrdersPage() {
               </div>
             </div>
 
-            {/* ── Sticker number range bar ──────────────────────────────────── */}
-            {showStickerBar && (
+            {/* ── Sticker bar ───────────────────────────────────────────────── */}
+            {showStickerBar && detail && (
               <div className="shrink-0 border-b border-surface-border/60 bg-violet-500/5 px-5 py-2.5">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="text-[11px] font-semibold text-violet-300">Print stickers</span>
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-[11px] text-slate-400">From</label>
-                    <input
-                      type="number" min={1} value={stickerFrom}
-                      onChange={(e) => setStickerFrom(e.target.value)}
-                      className="w-16 rounded border border-surface-border bg-[#0b0f14] px-2 py-1 text-[11px] text-white outline-none focus:border-violet-500/60"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-[11px] text-slate-400">To</label>
-                    <input
-                      type="number" min={1} value={stickerTo}
-                      onChange={(e) => setStickerTo(e.target.value)}
-                      className="w-16 rounded border border-surface-border bg-[#0b0f14] px-2 py-1 text-[11px] text-white outline-none focus:border-violet-500/60"
-                    />
-                  </div>
+                  {detail.products.length > 0 && (
+                    <span className="text-[11px] text-slate-400">
+                      {detail.products.map((p) => (
+                        <span key={p.product_id} className="mr-2">
+                          <span className="text-slate-300">{p.product_name}</span>
+                          <span className="ml-1 text-violet-400">×{p.quantity}</span>
+                        </span>
+                      ))}
+                      <span className="text-slate-600">
+                        ({detail.products.reduce((s, p) => s + Math.max(0, Math.round(p.quantity)), 0)} total)
+                      </span>
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={generateAndPrintStickers}
