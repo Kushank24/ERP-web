@@ -26,6 +26,7 @@ type SORow = {
 
 type SOLine = {
   id: number;
+  finished_good_id: number | null;
   product_name: string;
   product_code: string | null;
   quantity_sold: number;
@@ -542,7 +543,7 @@ export default function SalesOrdersPage() {
     setDocUploadError(null);
     setDraftLines(detail.lines.map((l) => ({
       lineId: l.id,
-      finished_good_id: "",
+      finished_good_id: l.finished_good_id != null ? String(l.finished_good_id) : "",
       product_name: l.product_name,
       product_code: l.product_code || "",
       quantity_sold: String(l.quantity_sold),
@@ -1330,7 +1331,13 @@ export default function SalesOrdersPage() {
                           }}
                           className="w-full rounded border border-surface-border/60 bg-[#0b0f14] px-2 py-1.5 text-xs text-white outline-none transition focus:border-accent/60"
                         >
-                          <option value="">Select Finished Good...</option>
+                          <option value="">
+                            {line.product_name ? `${line.product_name}${line.product_code ? ` (${line.product_code})` : ""} — change…` : "Select Finished Good..."}
+                          </option>
+                          {/* When editing, product may have 0 stock and not appear in the list */}
+                          {line.finished_good_id && !finishedGoods.find((fg) => fg.id.toString() === line.finished_good_id) && (
+                            <option value={line.finished_good_id}>{line.product_name}{line.product_code ? ` (${line.product_code})` : ""}</option>
+                          )}
                           {finishedGoods.map((fg) => (
                             <option key={fg.id} value={fg.id}>
                               {fg.product_name} {fg.product_code ? `(${fg.product_code})` : ""} - Stock: {fg.quantity_in_stock}
