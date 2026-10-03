@@ -1310,7 +1310,7 @@ export default function SalesOrdersPage() {
                       >
                         {/* Product Name (Dropdown) */}
                         <select
-                          required
+                          required={!line.product_name}
                           value={line.finished_good_id}
                           onChange={(e) => {
                             const fgId = e.target.value;
