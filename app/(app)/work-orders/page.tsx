@@ -627,33 +627,35 @@ export default function WorkOrdersPage() {
 <style>
   @page { size: 3in 2in; margin: 0; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #111;
-         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: Arial Black, Arial, Helvetica, sans-serif;
+    background: #fff; color: #000;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+    text-rendering: optimizeSpeed;
+  }
   .grid { display: block; }
   .sticker {
     width: 3in;
     height: 2in;
-    border: 0.6pt solid #bbb;
+    border: 1pt solid #000;
     border-radius: 2pt;
     padding: 3mm 3.5mm 2.5mm;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 1.2mm;
+    gap: 1mm;
     page-break-after: always;
   }
   .sticker:last-child { page-break-after: avoid; }
-  .sticker-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .wo-num { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.03em; }
-  .serial { font-size: 8.5pt; font-weight: 800; color: #333; }
-  .sticker svg { width: 100%; height: 15mm; }
-  .divider { border: none; border-top: 0.4pt solid #ddd; }
-  .info-row { font-size: 6.5pt; line-height: 1.4; color: #333; }
-  .info-row span { font-weight: 600; color: #000; }
+  .sticker-header { display: flex; flex-direction: column; gap: 0.5mm; }
+  .wo-num { font-size: 9pt; font-weight: 900; letter-spacing: 0.03em; color: #000; }
+  .serial { font-size: 8pt; font-weight: 700; color: #000; }
+  .sticker svg { width: 100%; height: 18mm; }
+  .divider { border: none; border-top: 1pt solid #000; }
+  .info-row { font-size: 7.5pt; font-weight: 700; line-height: 1.4; color: #000; }
+  .info-row span { font-weight: 900; color: #000; }
   @media print {
     html, body { width: 3in; height: 2in; }
   }
@@ -689,9 +691,10 @@ export default function WorkOrdersPage() {
   stickers.forEach(s => {
     JsBarcode('#bc' + s.id, s.barcode, {
       format: 'CODE128',
-      height: 32,
-      fontSize: 7,
-      margin: 1,
+      width: 2,
+      height: 50,
+      fontSize: 9,
+      margin: 2,
       displayValue: true,
       lineColor: '#000',
       background: '#fff',
