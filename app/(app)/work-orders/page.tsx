@@ -643,14 +643,10 @@ export default function WorkOrdersPage() {
     page-break-after: always;
   }
   .sticker:last-child { page-break-after: avoid; }
-  .sticker-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .wo-num { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.03em; }
-  .serial { font-size: 8.5pt; font-weight: 800; color: #333; }
-  .sticker svg { width: 100%; height: 15mm; }
+  .sticker-header { display: flex; flex-direction: column; gap: 0.5mm; }
+  .wo-num { font-size: 8pt; font-weight: 700; letter-spacing: 0.03em; }
+  .serial { font-size: 7pt; font-weight: 600; color: #444; }
+  .sticker svg { width: 100%; height: 18mm; }
   .divider { border: none; border-top: 0.4pt solid #ddd; }
   .info-row { font-size: 6.5pt; line-height: 1.4; color: #333; }
   .info-row span { font-weight: 600; color: #000; }
@@ -689,9 +685,10 @@ export default function WorkOrdersPage() {
   stickers.forEach(s => {
     JsBarcode('#bc' + s.id, s.barcode, {
       format: 'CODE128',
-      height: 32,
-      fontSize: 7,
-      margin: 1,
+      width: 2,
+      height: 50,
+      fontSize: 9,
+      margin: 2,
       displayValue: true,
       lineColor: '#000',
       background: '#fff',
