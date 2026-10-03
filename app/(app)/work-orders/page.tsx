@@ -625,20 +625,21 @@ export default function WorkOrdersPage() {
 <title>Stickers — ${escHtml(detail.work_order_number)}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"><\/script>
 <style>
-  @page { size: 3in 2in landscape; margin: 1.5mm; }
+  @page { size: 3in 2in; margin: 0; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #111; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #111;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .grid { display: block; }
   .sticker {
-    width: 100%;
-    height: calc(2in - 3mm);
+    width: 3in;
+    height: 2in;
     border: 0.6pt solid #bbb;
     border-radius: 2pt;
-    padding: 2mm 2.5mm 1.5mm;
+    padding: 3mm 3.5mm 2.5mm;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 1mm;
+    gap: 1.2mm;
     page-break-after: always;
   }
   .sticker:last-child { page-break-after: avoid; }
@@ -649,12 +650,12 @@ export default function WorkOrdersPage() {
   }
   .wo-num { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.03em; }
   .serial { font-size: 8.5pt; font-weight: 800; color: #333; }
-  .sticker svg { width: 100%; height: 14mm; }
+  .sticker svg { width: 100%; height: 15mm; }
   .divider { border: none; border-top: 0.4pt solid #ddd; }
   .info-row { font-size: 6.5pt; line-height: 1.4; color: #333; }
   .info-row span { font-weight: 600; color: #000; }
   @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body { width: 3in; height: 2in; }
   }
 </style>
 </head>
