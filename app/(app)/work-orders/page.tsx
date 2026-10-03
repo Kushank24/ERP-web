@@ -625,7 +625,7 @@ export default function WorkOrdersPage() {
 <title>Stickers — ${escHtml(detail.work_order_number)}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"><\/script>
 <style>
-  @page { size: 3in 2in; margin: 0; }
+  @page { size: 2in 3in; margin: 0; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: Arial Black, Arial, Helvetica, sans-serif;
@@ -637,8 +637,8 @@ export default function WorkOrdersPage() {
   }
   .grid { display: block; }
   .sticker {
-    width: 3in;
-    height: 2in;
+    width: 2in;
+    height: 3in;
     border: 1pt solid #000;
     border-radius: 2pt;
     padding: 3mm 3.5mm 2.5mm;
@@ -657,7 +657,7 @@ export default function WorkOrdersPage() {
   .info-row { font-size: 7.5pt; font-weight: 700; line-height: 1.4; color: #000; }
   .info-row span { font-weight: 900; color: #000; }
   @media print {
-    html, body { width: 3in; height: 2in; }
+    html, body { width: 2in; height: 3in; }
   }
 </style>
 </head>
