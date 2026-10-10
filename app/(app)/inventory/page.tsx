@@ -175,7 +175,7 @@ export default function InventoryPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
-  function openHistory(m: Material) {
+  const openHistory = useCallback((m: Material) => {
     setHistoryTarget(m);
     setHistory(null);
     setHistoryError(null);
@@ -184,12 +184,12 @@ export default function InventoryPage() {
       .then(setHistory)
       .catch((e: Error) => setHistoryError(e.message ?? "Failed to load history"))
       .finally(() => setHistoryLoading(false));
-  }
+  }, []);
 
-  function closeHistory() {
+  const closeHistory = useCallback(() => {
     setHistoryTarget(null);
     setHistory(null);
-  }
+  }, []);
 
   /* ── Convert to Finished Good modal ─────────────────────────────────── */
   const [convertTarget, setConvertTarget] = useState<Material | null>(null);
@@ -242,7 +242,7 @@ export default function InventoryPage() {
     useSortedData<MaterialWithTotal>(materialsWithTotal, "name");
 
   /* ── Inline-edit handlers ────────────────────────────────────────────── */
-  function startEdit(m: Material) {
+  const startEdit = useCallback((m: Material) => {
     setEditId(m.id);
     setDraft({
       name: m.name,
@@ -251,13 +251,13 @@ export default function InventoryPage() {
       cost: String(m.per_unit_cost),
     });
     setEditError(null);
-  }
+  }, []);
 
-  function cancelEdit() {
+  const cancelEdit = useCallback(() => {
     setEditId(null);
     setDraft(null);
     setEditError(null);
-  }
+  }, []);
 
   async function saveEdit(id: number) {
     if (!draft) return;
@@ -337,7 +337,7 @@ export default function InventoryPage() {
     setShowAdd(false);
   }
 
-  function openConvert(m: Material) {
+  const openConvert = useCallback((m: Material) => {
     setConvertTarget(m);
     setCvQty("");
     setCvName(m.name);
@@ -345,12 +345,12 @@ export default function InventoryPage() {
     setCvCategory("");
     setCvNotes("");
     setConvertError(null);
-  }
+  }, []);
 
-  function closeConvert() {
+  const closeConvert = useCallback(() => {
     setConvertTarget(null);
     setConvertError(null);
-  }
+  }, []);
 
   async function handleConvert(e: FormEvent) {
     e.preventDefault();
@@ -997,7 +997,7 @@ export default function InventoryPage() {
       ════════════════════════════════════════════════════════════════ */}
       {historyTarget && (
         <div
-          className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50"
           onClick={closeHistory}
         >
           <div
@@ -1157,7 +1157,7 @@ export default function InventoryPage() {
           Convert to Finished Good — modal overlay
       ════════════════════════════════════════════════════════════════ */}
       {convertTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-2xl border border-surface-border bg-[#0d1117] shadow-2xl">
             {/* Modal header */}
             <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
