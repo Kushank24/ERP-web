@@ -25,7 +25,7 @@ interface OfferItem {
 interface OfferRow {
   id: number; offer_number: string; company_name: string | null; enquiry_number: string | null;
   offer_date: string; valid_until: string | null; status: string; total_amount: number; currency: string;
-  call_status: boolean; called_at: string | null;
+  call_status: boolean; called_at: string | null; call_remarks: string | null;
 }
 interface OfferDetail extends OfferRow {
   company_id: number | null; enquiry_id: number | null;
@@ -125,6 +125,50 @@ function CallCheckbox({ row, onToggle }: { row: OfferRow; onToggle: (e: React.Mo
   );
 }
 
+function RemarksCell({ row, onSave }: { row: OfferRow; onSave: (e: React.MouseEvent, id: number, remarks: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(row.call_remarks ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function open(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDraft(row.call_remarks ?? "");
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function save(e: React.MouseEvent | React.KeyboardEvent) {
+    e.stopPropagation();
+    onSave(e as React.MouseEvent, row.id, draft);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <span className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") save(e as unknown as React.MouseEvent); if (e.key === "Escape") setEditing(false); }}
+          placeholder="What did they say?"
+          className="w-32 rounded border border-surface-border/60 bg-surface-base px-1.5 py-0.5 text-[10px] text-white placeholder-slate-600 outline-none focus:border-accent/50"
+        />
+        <button type="button" onClick={save} className="text-[10px] text-emerald-400 hover:text-emerald-300">✓</button>
+        <button type="button" onClick={e => { e.stopPropagation(); setEditing(false); }} className="text-[10px] text-slate-500 hover:text-white">✕</button>
+      </span>
+    );
+  }
+
+  return (
+    <span onClick={open} title={row.call_remarks ? "Edit remarks" : "Add remarks"}
+      className="max-w-[9rem] cursor-pointer truncate text-[10px] text-slate-400 hover:text-white">
+      {row.call_remarks || <span className="text-slate-600 italic">add note…</span>}
+    </span>
+  );
+}
+
 function Skeleton({ className = "" }: { className?: string }) {
   return <div className={"animate-pulse rounded bg-surface-border/40 " + className} />;
 }
@@ -138,24 +182,26 @@ function ErrorAlert({ message }: { message: string }) {
 }
 
 const OfferListRow = memo(function OfferListRow({
-  row, isActive, onRowClick, onCallToggle,
+  row, isActive, onRowClick, onCallToggle, onRemarksSave,
 }: {
   row: OfferRow;
   isActive: boolean;
   onRowClick: (id: number) => void;
   onCallToggle: (e: React.MouseEvent, id: number) => void;
+  onRemarksSave: (e: React.MouseEvent, id: number, remarks: string) => void;
 }) {
   return (
     <li>
       <button type="button" onClick={() => onRowClick(row.id)}
         className={"w-full border-b border-surface-border/30 px-4 py-3 text-left last:border-b-0 transition-colors " + (isActive ? "border-l-2 border-l-accent bg-accent/10" : "hover:bg-white/[0.025]")}>
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto_3.5rem] items-center gap-2">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto_2rem_minmax(0,9rem)] items-center gap-2">
           <span className={"truncate text-xs font-semibold " + (isActive ? "text-accent" : "text-white")}>{row.offer_number}</span>
           <span className="truncate text-xs text-slate-400">{row.company_name || "—"}</span>
           <span className="text-xs text-slate-400">{fmtDate(row.offer_date)}</span>
           <span className="text-right font-mono text-xs text-slate-300">{fmt(row.total_amount)}</span>
           <StatusBadge status={row.status} offerDate={row.offer_date} />
           <CallCheckbox row={row} onToggle={onCallToggle} />
+          <RemarksCell row={row} onSave={onRemarksSave} />
         </div>
         {row.enquiry_number && (
           <div className="mt-1 text-[10px] text-slate-600">{row.enquiry_number}</div>
@@ -538,6 +584,19 @@ export default function OffersPage() {
     }
   }, []);
 
+  const handleRemarksSave = useCallback(async (e: React.MouseEvent, offerId: number, remarks: string) => {
+    e.stopPropagation();
+    setRows(curr => curr.map(r => r.id === offerId ? { ...r, call_remarks: remarks || null } : r));
+    try {
+      await api(`/api/v1/offers/${offerId}/call-remarks`, {
+        method: "PATCH",
+        body: JSON.stringify({ remarks: remarks || null }),
+      });
+    } catch {
+      // silently ignore — the optimistic update stays
+    }
+  }, []);
+
   async function handleDelete() {
     if (!detail) return;
     if (!confirm("Delete offer " + detail.offer_number + "?")) return;
@@ -625,13 +684,14 @@ export default function OffersPage() {
         </div>
 
         <div className="shrink-0 border-b border-surface-border/50 bg-[#0f1419]/60 px-4 py-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto_3.5rem] gap-2 text-[10px] font-semibold uppercase tracking-wider">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5.5rem_6rem_auto_2rem_minmax(0,9rem)] gap-2 text-[10px] font-semibold uppercase tracking-wider">
             <SortHeader label="Offer #" colKey="offer_number" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
             <SortHeader label="Company" colKey="company_name" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
             <SortHeader label="Date" colKey="offer_date" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
             <SortHeader label="Amount" colKey="total_amount" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} className="justify-end" />
             <SortHeader label="Status" colKey="status" currentKey={offerSortKey as string} currentDir={offerSortDir} onSort={k => toggleOfferSort(k as keyof OfferRow)} />
-            <span className="flex items-center justify-center text-slate-500" title="Called?">Called</span>
+            <span className="flex items-center justify-center text-slate-500" title="Called?">✓</span>
+            <span className="text-slate-500">Remarks</span>
           </div>
         </div>
 
@@ -661,6 +721,7 @@ export default function OffersPage() {
                   isActive={row.id === selectedId}
                   onRowClick={handleRowClick}
                   onCallToggle={handleCallStatus}
+                  onRemarksSave={handleRemarksSave}
                 />
               ))}
             </ul>

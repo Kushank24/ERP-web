@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState, useMemo, useTransition } from "react";
+import { FormEvent, memo, useCallback, useEffect, useRef, useState, useMemo, useTransition } from "react";
 import { api, apiBlob } from "@/lib/api";
 import { STOCK_UNITS } from "@/lib/units";
 
@@ -74,12 +74,9 @@ const blankLine = (): DraftLine => ({
   quantity: "",
 });
 
-const inr = (n: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2,
-  }).format(n);
+const INR_FMT = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 });
+const inr = (n: number) => INR_FMT.format(n);
+const BOQ_HEADERS = ["Material", "Section Size", "Units", "Qty", "Total Consumed"];
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -189,7 +186,7 @@ function BoqTable({
       <table className="w-full text-left">
         <thead className="sticky top-[62px] z-[5] bg-surface-card">
           <tr className="border-b border-surface-border">
-            {["Material", "Section Size", "Units", "Qty", "Total Consumed"].map((h) => (
+            {BOQ_HEADERS.map((h) => (
               <th key={h} className="pb-2 pr-6 text-[10px] font-semibold uppercase tracking-wider text-slate-500 last:pr-0">{h}</th>
             ))}
             <th className="pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500" />
@@ -267,7 +264,7 @@ function BoqTable({
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
 
-function ProductCard({ product, onRefresh, materials: materialList }: {
+const ProductCard = memo(function ProductCard({ product, onRefresh, materials: materialList }: {
   product: ProductSummary; onRefresh: () => void; materials: { id: number; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
@@ -523,6 +520,15 @@ function ProductCard({ product, onRefresh, materials: materialList }: {
             />
           )}
 
+          {!boqLoading && (boq?.length ?? 0) > 0 && (
+            <div className="flex justify-end pt-1">
+              <button type="button" onClick={() => { setShowAdd((v) => !v); setBoqErr(null); }}
+                className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-1 text-[11px] font-medium text-accent transition-colors hover:bg-accent/20">
+                {showAdd ? "Cancel" : "+ Add BOQ Line"}
+              </button>
+            </div>
+          )}
+
           {showAdd && (
             <form onSubmit={handleAddBoq} className="rounded-lg border border-accent/20 bg-accent/5 p-4">
               <p className="mb-3 text-xs font-semibold text-accent">New BOQ Line</p>
@@ -562,7 +568,7 @@ function ProductCard({ product, onRefresh, materials: materialList }: {
       )}
     </div>
   );
-}
+});
 
 // ─── Create Product Panel ─────────────────────────────────────────────────────
 

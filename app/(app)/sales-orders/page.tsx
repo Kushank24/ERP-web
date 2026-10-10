@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, FormEvent, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, FormEvent, useRef } from "react";
 import { api, apiFormData } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
@@ -113,6 +113,13 @@ type DraftLine = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
+
+const SO_LINE_HEADERS = ["Product Name", "Product Code", "Qty", "Unit Price", "Line Total", "Notes", ""];
+const PAYMENT_STATUS_OPTS = [
+  { value: 1, label: "Not Received", activeClass: "border-red-500/50 bg-red-500/15 text-red-400" },
+  { value: 2, label: "Partially Received", activeClass: "border-amber-500/50 bg-amber-500/15 text-amber-400" },
+  { value: 3, label: "Received", activeClass: "border-green-500/50 bg-green-500/15 text-green-400" },
+];
 
 const STATUS_MAP: Record<number, { label: string; classes: string }> = {
   1: {
@@ -598,29 +605,29 @@ export default function SalesOrdersPage() {
   }
 
   // ── Computed totals — create form ──────────────────────────────────────────
-  const formSubtotal = draftLines.reduce((acc, l) => {
-    const qty = parseFloat(l.quantity_sold) || 0;
-    const price = parseFloat(l.unit_price) || 0;
-    return acc + qty * price;
-  }, 0);
+  const formSubtotal = useMemo(
+    () => draftLines.reduce((acc, l) => acc + (parseFloat(l.quantity_sold) || 0) * (parseFloat(l.unit_price) || 0), 0),
+    [draftLines]
+  );
   const formGSTRate = parseFloat(fGSTRate) || 0;
   const formGSTAmount = (formSubtotal * formGSTRate) / 100;
   const formGrandTotal = formSubtotal + formGSTAmount;
 
   // ── Computed totals — detail view ──────────────────────────────────────────
-  const detailSubtotal = detail
-    ? detail.lines.reduce((acc, l) => acc + l.quantity_sold * l.unit_price, 0)
-    : 0;
-  const detailExtraCosts = acItems.reduce((s, c) => s + (c.amount || 0), 0);
+  const detailSubtotal = useMemo(
+    () => detail ? detail.lines.reduce((acc, l) => acc + l.quantity_sold * l.unit_price, 0) : 0,
+    [detail]
+  );
+  const detailExtraCosts = useMemo(() => acItems.reduce((s, c) => s + (c.amount || 0), 0), [acItems]);
   const detailGSTAmount = detail ? ((detailSubtotal + detailExtraCosts) * detail.gst_rate) / 100 : 0;
   const detailGrandTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
 
-  const preFiltered = rows.filter((r) => {
+  const preFiltered = useMemo(() => rows.filter((r) => {
     if (colFilters.invoice && !r.invoice_number.toLowerCase().includes(colFilters.invoice.toLowerCase())) return false;
     if (colFilters.company && !(r.company_name ?? "").toLowerCase().includes(colFilters.company.toLowerCase())) return false;
     if (colFilters.status && r.payment_status !== parseInt(colFilters.status)) return false;
     return true;
-  });
+  }), [rows, colFilters]);
   const { sorted: filteredRows, sortKey: soSortKey, sortDir: soSortDir, toggleSort: toggleSOSort } =
     useSortedData<SORow>(preFiltered, "sales_date", "desc");
 
@@ -1279,15 +1286,7 @@ export default function SalesOrdersPage() {
 
                 {/* Column header */}
                 <div className="mt-3 grid grid-cols-[2fr_1.2fr_0.8fr_1fr_1.2fr_1.2fr_auto] items-center gap-2 border-b border-surface-border/50 pb-1.5">
-                  {[
-                    "Product Name",
-                    "Product Code",
-                    "Qty",
-                    "Unit Price",
-                    "Line Total",
-                    "Notes",
-                    "",
-                  ].map((h, i) => (
+                  {SO_LINE_HEADERS.map((h, i) => (
                     <span
                       key={i}
                       className="text-[10px] font-semibold uppercase tracking-wider text-slate-600"
@@ -1521,11 +1520,7 @@ export default function SalesOrdersPage() {
                       Payment Status
                     </p>
                     <div className="flex items-center gap-2">
-                      {[
-                        { value: 1, label: "Not Received", activeClass: "border-red-500/50 bg-red-500/15 text-red-400" },
-                        { value: 2, label: "Partially Received", activeClass: "border-amber-500/50 bg-amber-500/15 text-amber-400" },
-                        { value: 3, label: "Received", activeClass: "border-green-500/50 bg-green-500/15 text-green-400" },
-                      ].map((opt) => (
+                      {PAYMENT_STATUS_OPTS.map((opt) => (
                         <button
                           key={opt.value}
                           type="button"
