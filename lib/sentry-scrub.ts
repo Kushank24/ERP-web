@@ -4,13 +4,18 @@
  * it only REMOVES or SANITIZES it before anything leaves the device.
  */
 import type { Breadcrumb, ErrorEvent } from "@sentry/nextjs";
+import type { StreamedSpanJSON } from "@sentry/core";
 
 // ── URL sanitiser ─────────────────────────────────────────────────────────────
 // Strips query strings, fragments, and replaces numeric path segments.
-// /offers?id=1234 → /offers
-// /api/v1/offers/99 → /api/v1/offers/[id]
+// /offers?id=1234        → /offers
+// /api/v1/offers/99      → /api/v1/offers/[id]
+// GET https://host/offers/99 → GET /api/v1/offers/[id]  (HTTP span names)
 export function sanitizeUrl(url: string | undefined): string {
   if (!url) return "";
+  // Handle "METHOD URL" format used in HTTP span names
+  const httpMatch = url.match(/^([A-Z]{3,7})\s+(.+)$/);
+  if (httpMatch) return `${httpMatch[1]} ${sanitizeUrl(httpMatch[2])}`;
   try {
     const u = new URL(url, "http://x");
     return u.pathname.replace(/\/\d+/g, "/[id]");
@@ -106,4 +111,35 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
   }
   // UI click breadcrumbs are safe (element targets, no data values)
   return breadcrumb;
+}
+
+// ── Span scrubber (performance tracing) ──────────────────────────────────────
+// Called for every span before it leaves the browser.
+// Keeps timing data; strips any URL detail that carries record IDs or query params.
+export function scrubSpan(span: StreamedSpanJSON): StreamedSpanJSON {
+  const attrs = span.attributes as Record<string, unknown>;
+  const cleaned: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(attrs)) {
+    // Drop query strings entirely
+    if (key === "url.query" || key === "http.query") continue;
+    // Drop full request/response bodies
+    if (key.startsWith("http.request.body") || key === "http.response.body.content") continue;
+    // Sanitize URL-bearing attributes
+    if (
+      (key === "url.full" || key === "url.path" || key === "http.url" || key === "http.target") &&
+      typeof value === "string"
+    ) {
+      cleaned[key] = sanitizeUrl(value);
+    } else {
+      cleaned[key] = value;
+    }
+  }
+
+  return {
+    ...span,
+    // Span name for HTTP spans looks like "GET https://host/api/v1/offers/99"
+    name: sanitizeUrl(span.name) || span.name,
+    attributes: cleaned as StreamedSpanJSON["attributes"],
+  };
 }

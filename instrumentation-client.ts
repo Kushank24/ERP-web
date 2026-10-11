@@ -11,15 +11,22 @@
  *                              sanitises navigation URLs (removes query params)
  */
 import * as Sentry from "@sentry/nextjs";
-import { scrubBreadcrumb, scrubEvent } from "@/lib/sentry-scrub";
+import { browserTracingIntegration } from "@sentry/nextjs";
+import { scrubBreadcrumb, scrubEvent, scrubSpan } from "@/lib/sentry-scrub";
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
 
-  // ── Sampling ───────────────────────────────────────────────────────────────
-  // Performance tracing disabled entirely — transactions can expose route
-  // context including ERP record identifiers.
-  tracesSampleRate: 0,
+  // ── Performance tracing ────────────────────────────────────────────────────
+  // Sample 20% of page loads — enough for p50/p95 trends without high volume.
+  // beforeSendSpan (below) strips all URLs/IDs before any span leaves the browser.
+  tracesSampleRate: 0.2,
+  integrations: [
+    browserTracingIntegration(),
+  ],
+
+  // Every span is scrubbed before sending: numeric IDs replaced, query params dropped.
+  beforeSendSpan: scrubSpan,
 
   // ── Noise reduction ────────────────────────────────────────────────────────
   // Errors that are browser quirks or transient network failures, not bugs.
