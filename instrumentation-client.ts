@@ -20,7 +20,7 @@ Sentry.init({
   // ── Performance tracing ────────────────────────────────────────────────────
   // Sample 20% of page loads — enough for p50/p95 trends without high volume.
   // beforeSendSpan (below) strips all URLs/IDs before any span leaves the browser.
-  tracesSampleRate: 0.2,
+  tracesSampleRate: 1.0,
   integrations: [
     browserTracingIntegration(),
   ],
