@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@sentry/nextjs": "^11.6.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.0",
     "@tiptap/extension-image": "^3.30.5",

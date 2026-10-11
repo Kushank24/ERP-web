@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foundations Before Features — E-SAFE ERP Gap Analysis</title>
+<style>
+  /* ── Reset ────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body, h1, h2, h3, p, ul, figure { margin: 0; }
+  ul { padding: 0; }
+  img, svg { max-width: 100%; display: block; }
+  button { font: inherit; color: inherit; }
+
+  /* ── Tokens: light ────────────────────────────────────── */
+  :root {
+    --paper:      #F1F3F5;
+    --surface:    #FFFFFF;
+    --surface-2:  #E8EBEE;
+    --ink:        #171E26;
+    --ink-2:      #4A5560;
+    --ink-3:      #6E7A86;
+    --rule:       #D3D9DE;
+    --rule-soft:  #E2E6EA;
+    --steel:      #2B6C8F;
+    --steel-soft: #E1EBF2;
+    --oxide:      #AF3B35;
+    --oxide-soft: #F7E3E2;
+    --amber:      #8E5D0E;
+    --amber-soft: #F8EBD4;
+    --moss:       #3A6549;
+    --moss-soft:  #E1EDE5;
+    --shadow:     0 1px 2px rgba(23,30,38,.06), 0 8px 24px -12px rgba(23,30,38,.12);
+  }
+  /* ── Tokens: dark (system default, unless light is pinned) ── */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0F141A;
+      --surface:    #161D25;
+      --surface-2:  #1D2731;
+      --ink:        #E4E9ED;
+      --ink-2:      #A4B0BA;
+      --ink-3:      #7B8794;
+      --rule:       #29343E;
+      --rule-soft:  #202A33;
+      --steel:      #72B2D2;
+      --steel-soft: #15303E;
+      --oxide:      #E69089;
+      --oxide-soft: #341C1B;
+      --amber:      #DDA449;
+      --amber-soft: #33260F;
+      --moss:       #82BA96;
+      --moss-soft:  #17281D;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  /* ── Tokens: dark (explicitly pinned) ─────────────────── */
+  :root[data-theme="dark"] {
+    --paper:      #0F141A;
+    --surface:    #161D25;
+    --surface-2:  #1D2731;
+    --ink:        #E4E9ED;
+    --ink-2:      #A4B0BA;
+    --ink-3:      #7B8794;
+    --rule:       #29343E;
+    --rule-soft:  #202A33;
+    --steel:      #72B2D2;
+    --steel-soft: #15303E;
+    --oxide:      #E69089;
+    --oxide-soft: #341C1B;
+    --amber:      #DDA449;
+    --amber-soft: #33260F;
+    --moss:       #82BA96;
+    --moss-soft:  #17281D;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 60rem; margin: 0 auto; padding: 3.5rem 1.5rem 6rem; }
+
+  /* ── Typography ───────────────────────────────────────── */
+  h1, h2, h3 { text-wrap: balance; line-height: 1.2; letter-spacing: -0.015em; }
+  h1 { font-size: clamp(2rem, 5vw, 2.9rem); font-weight: 700; }
+  h2 { font-size: clamp(1.3rem, 3vw, 1.6rem); font-weight: 650; }
+  h3 { font-size: 1.02rem; font-weight: 650; letter-spacing: -0.005em; }
+  p  { margin: 0 0 1rem; max-width: 68ch; }
+  a  { color: var(--steel); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+
+  .mono {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  code {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.86em;
+    background: var(--surface-2);
+    padding: 0.1em 0.36em;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    color: var(--ink-3);
+    margin: 0 0 0.7rem;
+  }
+
+  /* ── Theme toggle ─────────────────────────────────────── */
+  .toggle {
+    position: fixed; top: 1rem; right: 1rem; z-index: 10;
+    background: var(--surface); color: var(--ink-2);
+    border: 1px solid var(--rule); border-radius: 6px;
+    padding: 0.35rem 0.6rem; cursor: pointer;
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.09em;
+    box-shadow: var(--shadow);
+  }
+  .toggle:hover { color: var(--ink); border-color: var(--steel); }
+
+  /* ── Header ───────────────────────────────────────────── */
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 1.6rem; margin-bottom: 2.5rem; }
+  .verdict { font-size: 1.12rem; color: var(--ink-2); max-width: 56ch; margin: 1rem 0 0; line-height: 1.55; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem;
+    margin-top: 1.5rem;
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.72rem; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+
+  /* ── Scorecard ────────────────────────────────────────── */
+  .score {
+    display: grid; gap: 1px;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: clip;
+    margin-bottom: 3rem;
+  }
+  .score > div { background: var(--surface); padding: 1.1rem 1.2rem; }
+  .score .n {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.75rem; font-weight: 600; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    display: block; margin-bottom: 0.4rem;
+  }
+  .score .l { font-size: 0.76rem; color: var(--ink-3); line-height: 1.35; display: block; }
+  .n-bad { color: var(--oxide); }
+  .n-warn { color: var(--amber); }
+  .n-ok { color: var(--moss); }
+  .score .l em { font-style: normal; color: var(--moss); }
+
+  /* ── Sections ─────────────────────────────────────────── */
+  section { margin-bottom: 3.5rem; }
+  .tier-head {
+    display: flex; align-items: baseline; gap: 0.85rem; flex-wrap: wrap;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 1.5rem;
+  }
+  .tier-n {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em;
+    padding: 0.25rem 0.5rem; border-radius: 4px; white-space: nowrap;
+  }
+  .tier-when { font-size: 0.8rem; color: var(--ink-3); margin-left: auto; }
+
+  /* ── Finding cards ────────────────────────────────────── */
+  .find {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.05rem 1.2rem;
+    margin-bottom: 0.8rem;
+    box-shadow: var(--shadow);
+  }
+  .find.sev-crit { border-left-color: var(--oxide); }
+  .find.sev-high { border-left-color: var(--amber); }
+  .find.sev-str  { border-left-color: var(--steel); }
+
+  .find-top { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+  .tag {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.65rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.09em;
+    padding: 0.2rem 0.45rem; border-radius: 3px; white-space: nowrap;
+  }
+  .t-crit { background: var(--oxide-soft); color: var(--oxide); }
+  .t-high { background: var(--amber-soft); color: var(--amber); }
+  .t-str  { background: var(--steel-soft); color: var(--steel); }
+  .t-ok   { background: var(--moss-soft);  color: var(--moss); }
+
+  .effort {
+    margin-left: auto;
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.7rem; color: var(--ink-3); white-space: nowrap;
+  }
+  .find p { font-size: 0.92rem; color: var(--ink-2); margin: 0 0 0.55rem; max-width: 76ch; }
+  .find p:last-child { margin-bottom: 0; }
+  .find .where {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem; color: var(--ink-3);
+    display: block; margin-bottom: 0.5rem; word-break: break-word;
+  }
+  .fix {
+    border-top: 1px dashed var(--rule);
+    padding-top: 0.55rem; margin-top: 0.7rem;
+    font-size: 0.88rem; color: var(--ink);
+  }
+  .fix b { color: var(--steel); font-weight: 650; }
+
+  /* ── Tables ───────────────────────────────────────────── */
+  .scroll { overflow-x: auto; margin: 1.2rem 0; border: 1px solid var(--rule); border-radius: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.87rem; background: var(--surface); }
+  th, td { padding: 0.6rem 0.85rem; text-align: left; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  th {
+    background: var(--surface-2);
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.68rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink-2); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .yes { color: var(--moss); font-weight: 600; }
+  .no  { color: var(--oxide); font-weight: 600; }
+  .part { color: var(--amber); font-weight: 600; }
+
+  /* ── Callout ──────────────────────────────────────────── */
+  .callout {
+    background: var(--steel-soft);
+    border: 1px solid var(--steel);
+    border-radius: 6px;
+    padding: 1.15rem 1.3rem;
+    margin: 1.5rem 0;
+  }
+  .callout.warn { background: var(--oxide-soft); border-color: var(--oxide); }
+  .callout p { margin-bottom: 0.6rem; color: var(--ink); }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout strong { font-weight: 700; }
+
+  /* ── Flow diagram (inline SVG, no external libs) ──────── */
+  .flow { margin: 1.5rem 0; padding: 1.2rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; overflow-x: auto; }
+  .flow svg { min-width: 46rem; height: auto; }
+  .flow .node-have  { fill: var(--steel-soft); stroke: var(--steel); }
+  .flow .node-gap   { fill: none; stroke: var(--oxide); stroke-dasharray: 5 4; }
+  .flow .lbl-have   { fill: var(--ink); font-weight: 600; }
+  .flow .lbl-gap    { fill: var(--oxide); font-weight: 600; }
+  .flow .edge       { stroke: var(--ink-3); fill: none; }
+  .flow .edge-gap   { stroke: var(--oxide); fill: none; stroke-dasharray: 4 4; }
+  .flow text        { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+  .flow .cap        { fill: var(--ink-3); font-size: 9.5px; }
+  .flow-key { display: flex; gap: 1.4rem; flex-wrap: wrap; margin-top: 0.9rem; font-size: 0.74rem; color: var(--ink-3);
+              font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+  .flow-key span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .sw { width: 0.8rem; height: 0.8rem; border-radius: 2px; flex: none; }
+  .sw-have { background: var(--steel-soft); border: 1px solid var(--steel); }
+  .sw-gap  { border: 1px dashed var(--oxide); }
+
+  ul { margin: 0 0 1rem; padding-left: 1.15rem; max-width: 72ch; }
+  li { margin-bottom: 0.35rem; color: var(--ink-2); font-size: 0.93rem; }
+  li strong { color: var(--ink); }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.4rem; margin-top: 4rem;
+    font-size: 0.8rem; color: var(--ink-3);
+  }
+  footer a { color: var(--ink-3); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ── Print ────────────────────────────────────────────── */
+  @media print {
+    :root {
+      --paper: #fff; --surface: #fff; --surface-2: #f2f2f2;
+      --ink: #000; --ink-2: #222; --ink-3: #555;
+      --rule: #bbb; --rule-soft: #ddd; --shadow: none;
+    }
+    .toggle { display: none; }
+    .wrap { max-width: none; padding: 0; }
+    section, .find, .scroll, .callout, .flow { break-inside: avoid; }
+    a { text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+
+<button class="toggle" id="themeToggle" type="button" aria-label="Toggle colour theme">Theme</button>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">E-SAFE ERP · Gap analysis against the 2026 market</p>
+  <h1>Foundations before features</h1>
+  <p class="verdict">
+    You have built a real quote-to-cash ERP — 108 endpoints, 29 tables, 18 screens, and an
+    offer/BOQ workflow that genuinely fits how E-SAFE sells ladders better than anything
+    off the shelf would. The gap against the market is not the feature list. It is that
+    authorization, stock history, and tax structure were never built underneath it.
+  </p>
+  <div class="meta">
+    <span>Audited 12 Sep 2026</span>
+    <span>~27k lines</span>
+    <span>Benchmarked vs ERPNext · Odoo · Zoho · Tally · ERPDrive</span>
+  </div>
+</header>
+
+<div class="score">
+  <div><span class="n">107</span><span class="l">API endpoints shipped</span></div>
+  <div><span class="n n-ok">103</span><span class="l">now enforce a role permission <em>(was 0)</em></span></div>
+  <div><span class="n n-bad">0</span><span class="l">stock movement records</span></div>
+  <div><span class="n n-warn">98</span><span class="l">tests passing <em>(was 36, none real)</em></span></div>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>Update — 12 Sep 2026. Tier 0 is complete</strong> across two commits,
+    <code>be2e6eb</code> (security) and <code>1297173</code> (data integrity).
+  </p>
+  <p>
+    Authorization is enforced on 103 routes, the debug endpoint is gone, role resolution no
+    longer reads the e-mail address, the sales-order status collision is split into two columns
+    with the backfill verified against live data, and work-order completion no longer doubles
+    its output. Every item below is marked with the commit that closed it.
+  </p>
+  <p>
+    <strong>The next item is the Tier 1 stock ledger.</strong> It is not merely next on a list:
+    three of the bugs fixed above were each only possible because stock is a mutable balance
+    with no history behind it.
+  </p>
+</div>
+
+<section>
+  <h2>The headline</h2>
+  <p>
+    I expected this analysis to conclude “add MRP, add batch tracking, add quality
+    inspection” — the things ERPNext and Odoo ship that you don't. Those gaps are real and
+    they're in Tier 4 below. But the audit surfaced three findings that outranked every
+    feature request:
+  </p>
+  <ul>
+    <li><strong>RBAC was fully written and never called.</strong> <code>permissions.py</code> defined 18 modules and 9 roles. <code>deps.py</code> defined <code>require_module()</code>. That function was referenced exactly once in the entire backend — at its own definition. All 107 protected endpoints used <code>Depends(get_current_user)</code> only. <em>Fixed — 103 routes now enforce a module.</em></li>
+    <li><strong>Two code paths actively corrupted data</strong> every time they ran, and one of them silently doubled finished-goods stock. <em>Both fixed, with the backfill verified against live data first.</em></li>
+    <li><strong>Your GST output is structurally wrong.</strong> One flat percentage, no CGST/SGST/IGST split, and the PDF hardcodes the label “IGST” regardless of place of supply. <em>Still open — Tier 2.</em></li>
+  </ul>
+  <p>
+    The market comparison is genuinely useful — but it mostly tells you that commercial ERPs
+    solved these particular problems two decades ago, and that the distance between you and
+    them is smaller than it looks once these are closed. Read Tier 0 as bugs, not roadmap.
+  </p>
+  <p>
+    One pattern worth carrying forward from fixing them: in all three cases the <em>data</em>
+    changed the plan. The role audit was safe to land only because all five real users already
+    resolved through their database role, so removing the e-mail matching changed nothing. The
+    status backfill only became defensible after a query revealed that 713 of 838 orders held a
+    legacy code with no payment meaning. Neither fact was visible in the code.
+  </p>
+</section>
+
+<section>
+  <div class="tier-head">
+    <span class="tier-n t-ok">Tier 0 · closed</span>
+    <h2>Stop the bleeding</h2>
+    <span class="tier-when">Done — <code>be2e6eb</code>, <code>1297173</code></span>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-ok">Fixed</span><h3>Every logged-in user can do everything</h3><span class="effort">done · be2e6eb</span></div>
+    <span class="where">app/deps.py:148 · app/permissions.py · all 14 routers</span>
+    <p>
+      Any user present in <code>app_users</code> can delete companies, delete purchase orders,
+      delete sales orders, launch email campaigns, and read all four analytics domains —
+      whatever their role says. <code>allowed_modules</code> is computed correctly and returned
+      to the browser, where it only filters which sidebar links render. The API itself does
+      not check it.
+    </p>
+    <p class="fix"><b>Fixed in <code>be2e6eb</code>:</b> two layers — a broad <code>require_any_module()</code> gate at router level (so cross-module reads like Offers→companies keep working), plus strict <code>require_module()</code> on all 51 mutations and all 12 analytics endpoints. Now 103 module-gated routes, <code>/auth/me</code> authentication-only, and exactly two public endpoints.</p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-ok">Fixed</span><h3><code>GET /auth/debug</code> is public and leaks token internals</h3><span class="effort">done · be2e6eb</span></div>
+    <span class="where">app/routers/auth.py:101</span>
+    <p>
+      Unauthenticated. Returns whether Supabase env vars are set, the <strong>length of your JWT
+      secret</strong>, the JWKS key count, and the decoded <code>sub</code>/<code>email</code>/<code>aud</code>/<code>role</code>
+      of any token posted to it. The code carries its own comment: <em>“Remove or restrict this
+      endpoint before going to production.”</em> It is in production.
+    </p>
+    <p class="fix"><b>Fixed in <code>be2e6eb</code>:</b> route deleted.</p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-ok">Fixed</span><h3>Roles resolve by substring match on email</h3><span class="effort">done · be2e6eb</span></div>
+    <span class="where">app/permissions.py:78-122 · app/config.py:45</span>
+    <p>
+      <code>modules_for_username()</code> hardcodes eight specific usernames in Python, then falls
+      back to pattern matching on the email local part — <code>if "admin" in check</code>,
+      <code>if "sales" in check</code>. A user named <code>sales.admin@…</code> resolves to admin.
+      Separately, <code>SUPABASE_DEFAULT_ROLE</code> defaults to <code>"admin"</code>, so an
+      unmatched Supabase user is an administrator. The Settings screen tells your team this is
+      “controlled by <code>allowed_modules</code> in the DB.” It isn't — there is no such table.
+    </p>
+    <p class="fix">
+      <b>Fixed in <code>be2e6eb</code>:</b> <code>modules_for_username()</code> removed entirely —
+      <code>app_users.role</code> is now the only trusted source, and unknown / empty /
+      <code>None</code> degrades to <code>viewer</code> instead of widening. Default flipped to
+      <code>viewer</code>. Dead <code>_resolve_supabase_role()</code> deleted so the permissive
+      default cannot be wired up later. Verified against the five real users first: all of them
+      already fell through to their DB role, so this was a zero-behaviour-change refactor.
+      <br><b>Still open:</b> moving role→module mapping into a real table with a management UI —
+      the Settings page renders the matrix but still has no write path.
+    </p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-ok">Added</span><h3>Login brute-force throttle</h3><span class="effort">done · be2e6eb</span></div>
+    <p>
+      Not in the original audit, but <code>/auth/login</code> is now one of only two endpoints
+      reachable without a token, which makes it the brute-force target. Added a sliding window
+      of 8 failures per 15 minutes, keyed on both client IP <em>and</em> username so rotating
+      source IPs against one account still trips it.
+    </p>
+    <p class="fix"><b>Caveat, documented in the code:</b> state is per-process, so behind multiple workers the effective limit multiplies by worker count. It raises brute-force cost substantially but is not a distributed limiter — move to Redis if the API is scaled out horizontally.</p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-ok">Fixed</span><h3>Payment status and dispatch status share one column</h3><span class="effort">done · 1297173</span></div>
+    <span class="where">app/routers/sales_orders.py:380 vs :498-505 · migration 008</span>
+    <p>
+      <code>PATCH /payment</code> wrote payment state (1–3) into <code>sales_orders.status</code>.
+      <code>POST /dispatch</code> wrote dispatch state (3–4) into the <em>same</em> column.
+      Analytics read it as payment status only. Recording a dispatch destroyed the payment
+      state, and recording a payment destroyed the dispatch state.
+    </p>
+    <p>
+      <strong>This was live, not theoretical.</strong> Querying the data first showed 41 orders
+      fully dispatched and 23 of those <em>also</em> payment-received — two facts sharing one
+      integer. Dispatching any of them would have wiped the payment state.
+    </p>
+    <p>
+      The query also changed the backfill plan. <strong>713 of 838 orders carry
+      <code>status = 6</code></strong> — a value no code path writes, from a legacy bulk import.
+      It holds no payment meaning, so those rows were left <code>NULL</code> rather than
+      asserting "not received" about 713 real orders. <code>dispatch_status</code> was derived
+      from <code>sales_order_items.dispatched_qty</code>, the actual record of what shipped,
+      rather than from the conflated column.
+    </p>
+    <p class="fix">
+      <b>Fixed in <code>1297173</code>:</b> split into <code>payment_status</code> and
+      <code>dispatch_status</code> with CHECK constraints on both, so neither can accumulate an
+      out-of-range code the way <code>status</code> accumulated a 6. <code>status</code> is kept
+      and still mirrored from <code>payment_status</code> so unmigrated readers keep working —
+      and since only the payment endpoint writes it now, the collision cannot recur.
+      Two things fell out: <code>payment_received</code> had existed since the initial schema but
+      no endpoint ever wrote it (<code>FALSE</code> on all 838 rows) and is now derived; and
+      analytics was bucketing on <code>status IN (1,2,3)</code>, so <strong>85% of orders were
+      missing from the payment breakdown entirely</strong> — they are now reported explicitly.
+    </p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-ok">Fixed</span><h3>Issue-then-complete a work order and stock doubles</h3><span class="effort">done · 1297173</span></div>
+    <span class="where">app/routers/work_orders.py:318-408 · /issue-products</span>
+    <p>
+      <code>POST /issue-products</code> inserts finished-goods rows and deducts no materials.
+      Marking the same work order complete inserted finished-goods rows <em>again</em> for the
+      full ordered quantity and deducted materials once. A fully-issued work order that was then
+      completed <strong>produced its output twice while consuming input once.</strong>
+    </p>
+    <p class="fix">
+      <b>Fixed in <code>1297173</code>:</b> completion now produces only the outstanding quantity
+      — <code>remaining_qty</code>, which <code>_load_wo</code> already computed — so
+      <em>issued + produced</em> always equals ordered.
+      <br>Material consumption was corrected at the same time: requirements are now
+      <strong>aggregated per material across all products before validating</strong>, because one
+      material appearing in two products' BOQs previously passed two per-line checks and still
+      drove the total negative. Insufficient stock rejects with the per-material shortfall
+      instead of going negative; a BOQ material missing from inventory rejects instead of
+      <code>continue</code> (which silently under-consumed and hid a broken BOQ→material name
+      link); and rows are locked <code>FOR UPDATE</code> before deducting.
+      <br>Reopening a completed order is now <strong>refused</strong> rather than left
+      inconsistent — completion has no reversal and the goods may already be sold. Safe to
+      refuse because the UI only ever sends <code>"completed"</code>.
+    </p>
+  </div>
+
+  <div class="find sev-high">
+    <div class="find-top"><span class="tag t-high">Hygiene</span><h3>An 11&nbsp;MB production data dump sits outside version control</h3><span class="effort">~15 minutes</span></div>
+    <span class="where">ERP/backups/ — outside both git repositories</span>
+    <p>
+      <strong>Corrected from an earlier draft of this document, which stated this dump was on
+      GitHub. It is not.</strong> <code>ERP/backups/2026-09-07_23-29-49/</code> holds a full
+      <code>pg_dump</code> of live data — every company, contact, phone number, GSTIN and price
+      you hold — but it lives at <code>ERP/</code> level, and <code>ERP/</code> is not a git
+      repository. Only <code>ERP/backend</code> and <code>ERP/web</code> are, and neither tracks
+      it (verified: zero tracked files under <code>backups/</code> in both). There is no
+      exposure and no history to purge.
+    </p>
+    <p>
+      What remains is that the only copy of your backups is on one laptop, unencrypted, with no
+      offsite copy and no schedule.
+    </p>
+    <p class="fix"><b>Fix:</b> add <code>backups/</code> to both <code>.gitignore</code> files defensively, in case the directory is ever created inside a repo. Then give the backup an offsite destination and a schedule — a local-only backup does not survive the event it exists for.</p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-ok">Fixed</span><h3>Three quick correctness fixes</h3><span class="effort">done · 1297173</span></div>
+    <p>
+      <code>create_fg</code> called <code>.strip()</code> on two <code>Optional</code> fields that
+      default to <code>None</code> → guaranteed 500 when omitted
+      (<code>finished_goods.py:95-96</code>). Creating a sales order ran a
+      <strong>global</strong> <code>DELETE FROM finished_goods WHERE quantity_in_stock &lt;= 0</code>,
+      not scoped to that order (<code>sales_orders.py:272</code>) — so creating one sales order
+      deleted every zero-stock finished-goods row in the database, including rows belonging to
+      unrelated orders and work orders.
+      <code>POST /{id}/dispatch</code> had no stock check on either branch and drove stock
+      negative.
+    </p>
+    <p class="fix"><b>Fixed in <code>1297173</code>:</b> the <code>None</code>s are guarded, the delete is scoped to the finished-goods rows that order actually drew from, and both dispatch branches check sufficiency before deducting.</p>
+  </div>
+
+  <div class="callout">
+    <p>
+      <strong>Tier 0 is clear.</strong> Migration <code>008</code> was dry-run inside a
+      rolled-back transaction and every row count verified before applying, with
+      <code>sales_orders</code> and <code>sales_order_items</code> snapshotted first. It is
+      additive — no column dropped, no data destroyed — and constraint enforcement was confirmed
+      by attempting an out-of-range write.
+    </p>
+    <p>
+      Worth noting before Tier 1: three of the bugs fixed here — negative stock, doubled output,
+      and the unscoped delete — were each only <em>possible</em> because stock is a mutable
+      balance with no movement history. That is the next item, and it is not a coincidence.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="tier-head">
+    <span class="tier-n t-high">Tier 1</span>
+    <h2>The foundations every market ERP has</h2>
+    <span class="tier-when">Next 4–6 weeks</span>
+  </div>
+
+  <p>
+    These are what separate “a set of CRUD screens over a database” from “an ERP.” The
+    stock ledger is the highest-leverage single change in this entire document — it unlocks
+    valuation, reconciliation, traceability, and batch tracking, all of which are otherwise
+    impossible to add later.
+  </p>
+
+  <div class="find sev-high">
+    <div class="find-top"><span class="tag t-high">Foundation</span><h3>An immutable stock movement ledger</h3><span class="effort">~2 weeks</span></div>
+    <p>
+      Today stock is a single mutable balance — <code>materials.length_weight_nos</code> and
+      <code>finished_goods.quantity_in_stock</code> — incremented and decremented in place from
+      <strong>nine call sites across five routers</strong>. There is no movement history, so a
+      wrong number cannot be traced to a cause, and current stock cannot be reconciled against
+      anything. <a href="https://eloerp.net/blog/erpnext-vs-odoo-vs-zoho-cloud-erp">ERPNext and Odoo both
+      ship a full stock ledger</a> with FIFO/LIFO/moving-average valuation and landed costs.
+    </p>
+    <p class="fix"><b>Fix:</b> add <code>stock_ledger_entries</code> (item, qty delta, unit, source doc type + id, user, timestamp, resulting balance). Route all nine mutation sites through one function that writes a ledger row. Keep the balance column as a cached projection you can rebuild from the ledger.</p>
+  </div>
+
+  <div class="find sev-high">
+    <div class="find-top"><span class="tag t-high">Foundation</span><h3>Audit trail — who changed what</h3><span class="effort">~1 week</span></div>
+    <p>
+      No table has <code>created_by</code> or <code>updated_by</code>. There is no audit or history
+      table anywhere. When a price or a quantity is wrong, there is no way to establish who
+      changed it or when. <a href="https://blubanyan.com/best-practices-for-managing-audit-trails-in-erp/">Audit
+      readiness for SMEs fails on exactly this</a> — not missing transactions, missing traceability.
+    </p>
+    <p class="fix"><b>Fix:</b> add <code>created_by</code>/<code>updated_by</code>/<code>updated_at</code> to every business table, plus an append-only <code>audit_log</code> for status transitions and price changes. You have the user on every request already.</p>
+  </div>
+
+  <div class="find sev-high">
+    <div class="find-top"><span class="tag t-high">Foundation</span><h3>Materials are joined to everything by name string</h3><span class="effort">~1 week</span></div>
+    <span class="where">products.py:309 · purchase_orders.py:367,442 · work_orders.py:355 · finished_goods.py:153</span>
+    <p>
+      BOQ lines, PO lines, work-order consumption, and finished-goods returns all locate a
+      material with <code>LOWER(name) = LOWER(name)</code>. There is no foreign key.
+      <strong>Renaming a material silently orphans its BOQ lines and its cost history</strong> —
+      and BOQ explosion then skips it without error. Supplier auto-creation by name has the same
+      flaw: a rename spawns a duplicate supplier.
+    </p>
+    <p class="fix"><b>Fix:</b> add real <code>material_id</code> FKs, backfill by name once, keep name as display only. Also validate the three <code>NOT VALID</code> FKs already in the schema.</p>
+  </div>
+
+  <div class="find sev-high">
+    <div class="find-top"><span class="tag t-high">Foundation</span><h3>Document numbering is client-side and racy</h3><span class="effort">~3 days</span></div>
+    <p>
+      Four of five document types need a manually typed number. Offer numbers are suggested from
+      <em>rows currently loaded in the browser</em> (<code>offers/page.tsx:327</code>). Enquiry
+      numbers use <code>MAX(SPLIT_PART(...)) + 1</code> with no lock. Every uniqueness check is
+      read-then-insert. Two users creating documents at once will collide.
+    </p>
+    <p class="fix"><b>Fix:</b> one <code>number_series</code> table (prefix, fiscal year, counter) and a server-side allocator using a Postgres sequence or <code>SELECT … FOR UPDATE</code>. Never let the client propose a number.</p>
+  </div>
+
+  <div class="find sev-high">
+    <div class="find-top"><span class="tag t-high">Foundation</span><h3>Schema lives in five places, one of which runs DDL per request</h3><span class="effort">~3 days</span></div>
+    <p>
+      <code>backend/migrations/</code> does <strong>not</strong> contain your core schema — files
+      001–007 reference <code>products</code>, <code>sales_orders</code>, and the
+      <code>offer_status</code> enum without ever creating them. The real schema is spread across
+      <code>supabase/migrations/</code>, a 68&nbsp;KB <code>pg_dump</code>, four ad-hoc Python
+      scripts, and <code>email_campaigns.py:55-57</code>, which executes
+      <code>CREATE TABLE IF NOT EXISTS</code> plus <code>ALTER TABLE</code> on <em>every</em> list
+      call. You also have 61 indexes including exact duplicates like
+      <code>idx_offers_idx_offer_status</code> and <code>idx_offers_idx_offers_status</code>.
+    </p>
+    <p class="fix"><b>Fix:</b> adopt Alembic, baseline from the live dump, delete the runtime DDL, and drop the duplicate indexes.</p>
+  </div>
+</section>
+
+<section>
+  <div class="tier-head">
+    <span class="tier-n t-high">Tier 2</span>
+    <h2>Compliance — where the market is genuinely ahead</h2>
+    <span class="tier-when">Next quarter</span>
+  </div>
+
+  <p>
+    This is the tier where a gap stops being a productivity cost and becomes a legal one. It is
+    also where every Indian ERP — including free ERPNext — beats you outright today.
+  </p>
+
+  <div class="callout warn">
+    <p><strong>Your invoices may not be valid tax documents.</strong></p>
+    <p>
+      You apply one flat <code>gst_pct</code> per document. There is no CGST/SGST/IGST split and
+      no place-of-supply logic, yet <code>pdf_service.py:725</code> prints the label
+      <strong>“IGST (x%)”</strong> on every invoice. For an intra-Rajasthan sale that label is
+      simply wrong. Separately, <code>hsn_code</code> exists <em>only in the frontend</em> —
+      hardcoded to <code>"70199000"</code>, composed into description text, never sent to the API,
+      and with no column in any table. Your company GSTIN, address, phone, and email are
+      hardcoded in <code>pdf_service.py</code>.
+    </p>
+  </div>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Capability</th><th>E-SAFE</th><th>ERPNext</th><th>Tally / Zoho / ERPDrive</th><th>Why it matters</th></tr></thead>
+    <tbody>
+      <tr><td>CGST/SGST/IGST split</td><td class="no">No</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Wrong tax breakup on every invoice</td></tr>
+      <tr><td>HSN per line, persisted</td><td class="no">No</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Mandatory on B2B invoices</td></tr>
+      <tr><td>Invoice document + PDF</td><td class="no">No</td><td class="yes">Yes</td><td class="yes">Yes</td><td>The only doc type you have no PDF for</td></tr>
+      <tr><td>e-Invoice IRN</td><td class="no">No</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Mandatory above ₹5&nbsp;cr turnover</td></tr>
+      <tr><td>e-Way bill</td><td class="no">No</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Required for goods movement</td></tr>
+      <tr><td>GSTR exports</td><td class="no">No</td><td class="yes">Yes</td><td class="yes">Yes</td><td>Monthly filing is manual today</td></tr>
+      <tr><td>Job work / ITC-04</td><td class="no">No</td><td class="yes">Yes</td><td class="part">Marg, ERPDrive</td><td>Only if you use job workers</td></tr>
+      <tr><td>Multi-company / profile table</td><td class="no">No</td><td class="yes">Yes</td><td class="yes">Yes</td><td>GSTIN hardcoded in source</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    Sequence it as: <strong>company profile table</strong> (de-hardcode GSTIN/address) →
+    <strong>tax master with HSN-level rates and place-of-supply logic</strong> →
+    <strong>a real invoice document with its own numbering series and PDF</strong> →
+    <strong>e-invoice IRN and e-way bill via an IRP provider API</strong>. The first three are
+    prerequisites for the fourth, so there's no shortcut.
+  </p>
+
+  <p>
+    On job work specifically — if E-SAFE sends material out for galvanising, anodising, or
+    powder coating, this matters more than it looks. Under
+    <a href="https://www.oemup.app/blog/job-work-itc04">Section 143 CGST inputs must return within
+    one year</a> or become a deemed supply, and ERPs that handle this time-stamp every challan and
+    flag material nearing its deadline. You have no challan concept at all.
+  </p>
+</section>
+
+<section>
+  <div class="tier-head">
+    <span class="tier-n t-str">Tier 3</span>
+    <h2>Accounting — and what not to build</h2>
+    <span class="tier-when">Ongoing</span>
+  </div>
+
+  <p>
+    The audit found no chart of accounts, no journal entries, no double-entry, no trial balance,
+    no P&amp;L, no balance sheet, no AR/AP aging, no credit notes, no vendor payments, and no
+    bank reconciliation. That sounds alarming until you ask whether you should build any of it.
+  </p>
+
+  <div class="callout">
+    <p><strong>Recommendation: do not build a general ledger.</strong></p>
+    <p>
+      Tally already does this, your CA already knows it, and it is a deep, boring, heavily
+      regulated domain where you have no advantage. Build the <em>operational</em> finance
+      features that touch your workflow, and push the accounting layer out via export or
+      integration.
+    </p>
+  </div>
+
+  <h3 style="margin-bottom:.7rem">Build these</h3>
+  <ul>
+    <li><strong>Payment history as rows, not a scalar.</strong> Today <code>payment_amount</code> is a single overwritable number — part-payment history is destroyed. A <code>payments</code> table with date, method, reference, and allocation is a few days' work and makes collections real.</li>
+    <li><strong>Due dates and AR aging.</strong> There is no <code>due_date</code> column anywhere, so no ERP-standard 0-30-60-90 bucket is computable. This is your single most valuable finance report.</li>
+    <li><strong>Credit limits and payment terms on <code>companies</code>,</strong> with a soft warning at offer or order time.</li>
+    <li><strong>Inventory valuation.</strong> Right now <code>per_unit_cost</code> is <em>overwritten</em> by the latest PO receipt, which destroys historical cost — so your <code>/products/costs</code> rollup silently reprices old production. Once the Tier 1 stock ledger exists, moving-average becomes straightforward and COGS becomes possible.</li>
+  </ul>
+
+  <h3 style="margin-bottom:.7rem">Skip these — integrate instead</h3>
+  <ul>
+    <li>Chart of accounts, journals, trial balance, P&amp;L, balance sheet, cash flow</li>
+    <li>Bank reconciliation, cash and petty-cash books</li>
+    <li>TDS/TCS computation, fiscal period close, year-end</li>
+  </ul>
+  <p>
+    A Tally or Zoho Books export of invoices, payments, and purchase bills gets you the
+    statutory layer for a fraction of the effort — and none of those exports exist yet, which
+    makes this a cheap, high-value first step.
+  </p>
+</section>
+
+<section>
+  <div class="tier-head">
+    <span class="tier-n t-str">Tier 4</span>
+    <h2>Manufacturing depth</h2>
+    <span class="tier-when">6–12 months</span>
+  </div>
+
+  <p>
+    This is the tier I expected to lead with. It matters — but every item here is
+    <em>easier</em> once Tier 1 exists, and several are outright impossible without the stock
+    ledger.
+  </p>
+
+  <figure class="flow">
+    <svg viewBox="0 0 760 230" role="img" aria-labelledby="flowTitle flowDesc">
+      <title id="flowTitle">E-SAFE document flow with capability gaps</title>
+      <desc id="flowDesc">Enquiry through dispatch exists as a connected chain. Invoice, production planning, routing and capacity, quality inspection, and batch traceability are missing.</desc>
+
+      <!-- main chain -->
+      <g>
+        <rect class="node-have" x="8"   y="26" width="92" height="34" rx="5"/>
+        <rect class="node-have" x="130" y="26" width="92" height="34" rx="5"/>
+        <rect class="node-have" x="252" y="26" width="92" height="34" rx="5"/>
+        <rect class="node-have" x="374" y="26" width="92" height="34" rx="5"/>
+        <rect class="node-have" x="496" y="26" width="92" height="34" rx="5"/>
+        <rect class="node-have" x="618" y="26" width="92" height="34" rx="5"/>
+        <text class="lbl-have" x="54"  y="47" text-anchor="middle">Enquiry</text>
+        <text class="lbl-have" x="176" y="47" text-anchor="middle">Offer</text>
+        <text class="lbl-have" x="298" y="47" text-anchor="middle">Sales Order</text>
+        <text class="lbl-have" x="420" y="47" text-anchor="middle">Work Order</text>
+        <text class="lbl-have" x="542" y="47" text-anchor="middle">Finished Gds</text>
+        <text class="lbl-have" x="664" y="47" text-anchor="middle">Dispatch</text>
+      </g>
+
+      <!-- chain arrows -->
+      <g class="edge" stroke-width="1.4" marker-end="url(#ar)">
+        <path d="M100 43 H126"/><path d="M222 43 H248"/><path d="M344 43 H370"/>
+        <path d="M466 43 H492"/><path d="M588 43 H614"/>
+      </g>
+
+      <!-- missing invoice -->
+      <rect class="node-gap" x="618" y="120" width="92" height="34" rx="5"/>
+      <text class="lbl-gap" x="664" y="141" text-anchor="middle">Invoice</text>
+      <path class="edge-gap" d="M664 60 V116" stroke-width="1.4" marker-end="url(#arg)"/>
+      <text class="cap" x="672" y="92">does not exist</text>
+
+      <!-- missing gates -->
+      <g>
+        <rect class="node-gap" x="252" y="120" width="92" height="34" rx="5"/>
+        <text class="lbl-gap" x="298" y="141" text-anchor="middle">MRP / Plan</text>
+        <path class="edge-gap" d="M298 60 V116" stroke-width="1.4" marker-end="url(#arg)"/>
+
+        <rect class="node-gap" x="374" y="120" width="92" height="34" rx="5"/>
+        <text class="lbl-gap" x="420" y="141" text-anchor="middle">Routing</text>
+        <path class="edge-gap" d="M420 60 V116" stroke-width="1.4" marker-end="url(#arg)"/>
+
+        <rect class="node-gap" x="374" y="176" width="92" height="34" rx="5"/>
+        <text class="lbl-gap" x="420" y="197" text-anchor="middle">QC gate</text>
+        <path class="edge-gap" d="M420 154 V172" stroke-width="1.4" marker-end="url(#arg)"/>
+
+        <rect class="node-gap" x="496" y="120" width="92" height="34" rx="5"/>
+        <text class="lbl-gap" x="542" y="141" text-anchor="middle">Batch trace</text>
+        <path class="edge-gap" d="M542 60 V116" stroke-width="1.4" marker-end="url(#arg)"/>
+
+        <rect class="node-gap" x="130" y="120" width="92" height="34" rx="5"/>
+        <text class="lbl-gap" x="176" y="141" text-anchor="middle">Revisions</text>
+        <path class="edge-gap" d="M176 60 V116" stroke-width="1.4" marker-end="url(#arg)"/>
+      </g>
+
+      <defs>
+        <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0 1 L7 4 L0 7 z" fill="currentColor" style="color:var(--ink-3)"/>
+        </marker>
+        <marker id="arg" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0 1 L7 4 L0 7 z" fill="currentColor" style="color:var(--oxide)"/>
+        </marker>
+      </defs>
+    </svg>
+    <div class="flow-key">
+      <span><i class="sw sw-have"></i> Built and working</span>
+      <span><i class="sw sw-gap"></i> Missing capability</span>
+    </div>
+  </figure>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-str">Priority</span><h3>Quality inspection &amp; batch traceability</h3><span class="effort">~6 weeks</span></div>
+    <p>
+      For an EN-131 / ANSI A-14.5 certified product line this is your largest uncovered risk.
+      You manufacture load-rated safety equipment with no inspection checkpoints, no batch
+      numbers, no supplier lot capture, and no certificate storage. If a ladder fails in the
+      field you cannot scope which units share its material lot.
+      <a href="https://qt9software.com/blog/manufacturing-traceability">Market ERPs use batch
+      genealogy precisely to bound recall scope and satisfy ISO 9001 audits.</a>
+    </p>
+    <p class="fix"><b>Fix:</b> batch numbers on material receipt and on finished goods, an inspection record against work-order completion, and a genealogy query from FG batch back to supplier lot. Depends on the Tier 1 stock ledger.</p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-str">Priority</span><h3>Reorder points &amp; safety stock</h3><span class="effort">~2 weeks</span></div>
+    <p>
+      Your low-stock thresholds are hardcoded constants — and inconsistently: <code>10.0</code> for
+      materials and <code>5.0</code> for finished goods in <code>dashboard.py</code>, <code>&lt; 10</code>
+      again in <code>materials.py</code>, but <code>5</code> in the finished-goods screen and
+      <code>&lt; 10</code> in the inventory screen. The market standard is per-item
+      <code>reorder_point = (avg daily usage × lead time) + safety stock</code>.
+    </p>
+    <p class="fix"><b>Fix:</b> per-material reorder level and safety stock columns, plus supplier lead time. Cheap, and it turns your dashboard alert from decorative into actionable.</p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-str">Later</span><h3>Multi-level BOM, MRP, and capacity</h3><span class="effort">~3 months</span></div>
+    <p>
+      Your BOQ is single-level with no revisions or effectivity dates, and Work Orders have no
+      planning layer above them.
+      <a href="https://www.erpresearch.com/erp/erpnext/manufacturing-management">ERPNext runs MRP
+      off demand, stock, and lead times to auto-generate work orders and POs</a>, with finite
+      capacity scheduling, Gantt views, and bottleneck analysis. This is the biggest genuine
+      feature gap — and the one where buying beats building most decisively.
+    </p>
+    <p class="fix"><b>Fix:</b> BOM revisions and sub-assemblies first (incremental, useful alone). Defer real MRP until order volume actually makes manual planning hurt.</p>
+  </div>
+
+  <div class="find sev-str">
+    <div class="find-top"><span class="tag t-str">Later</span><h3>Multi-warehouse &amp; bin locations</h3><span class="effort">~4 weeks</span></div>
+    <p>
+      Single flat stock pool today. Only worth building when you genuinely hold stock in more
+      than one place — but note it is <em>much</em> cheaper to add on top of a stock ledger than
+      to retrofit onto balance columns, which is another argument for sequencing Tier 1 first.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="tier-head">
+    <span class="tier-n t-str">Tier 5</span>
+    <h2>Where you could get ahead</h2>
+    <span class="tier-when">Opportunistic</span>
+  </div>
+
+  <p>
+    Everything above is catching up. These are places where a small custom system can genuinely
+    beat a big commercial one, because you can ship them narrow and fit them exactly to E-SAFE.
+  </p>
+
+  <ul>
+    <li><strong>Shop-floor mobile capture.</strong> Work-order completion is currently a status flip in a desktop form, so system state and shop-floor reality drift. <a href="https://www.alphasoftware.com/blog/shop-floor-data-collection-software-platforms-cost-examples">Offline-first barcode capture</a> for material issue and FG receipt would fix your inventory accuracy at the source — and it is a small app, not an ERP module.</li>
+    <li><strong>Quote intelligence.</strong> Your per-company price-history chips are already better than stock ERPNext. Extend to win/loss by price point, margin floors, and discount approval thresholds — this is real <a href="https://hyperscayle.com/insights/revops-cpq-comparison-guide-for-2026-platforms-features-and-when-to-build-your-own">CPQ territory</a>, and it's your differentiator.</li>
+    <li><strong>Offer revision history.</strong> Market CPQ preserves every version so you can see what moved between revision 1, 2 and 3. You overwrite in place.</li>
+    <li><strong>Document extraction.</strong> Supplier invoice → PO match is the highest-ROI <a href="https://www.erpresearch.com/en-us/ai-in-erp">AI use case in ERP</a> and a natural fit given you already parse CSV/XLSX.</li>
+    <li><strong>Customer portal.</strong> Order status, dispatch tracking, and invoice download. Small surface, high perceived value, and you already have per-company auth.</li>
+    <li>
+      <strong>Tests and CI — started.</strong> The audit found one test file covering 25 lines of
+      pure arithmetic against 108 endpoints, with two of its seven test classes asserting
+      against mocks the test itself constructs, so they could never fail. Tier 0 added 62 tests
+      across authorization, login throttling, and the status/stock logic — each one negative-
+      controlled, meaning the fix was reverted to confirm the test actually breaks. That is the
+      difference worth preserving. <strong>Still missing:</strong> any HTTP-level test (no
+      <code>httpx</code>, so no <code>TestClient</code>), any frontend test, and CI to run any of
+      it — no Dockerfile, no workflow, no linter config. Before Tier 1 refactors touch nine
+      stock-mutation sites, wire the suite into CI so it runs without being asked.
+    </li>
+  </ul>
+</section>
+
+<section>
+  <div class="tier-head">
+    <span class="tier-n t-ok">Verdict</span>
+    <h2>Build, buy, or both</h2>
+  </div>
+
+  <p>
+    The honest read: <strong>do not chase feature parity with ERPNext.</strong> They have
+    hundreds of contributor-years in inventory and accounting, they are free, and
+    <a href="https://www.erpresearch.com/compare/erpnext-vs-odoo-for-manufacturing">a 50-user shop
+    saves ₹14–21 lakh a year</a> choosing them over Odoo Enterprise. You will not out-build that
+    on generic modules.
+  </p>
+  <p>
+    But you shouldn't migrate either. Your enquiry → offer → BOQ → work-order spine is modelled
+    on how E-SAFE actually sells and builds ladders — spec slots, tender variants, per-company
+    price history, BOQ unit conversion. That is
+    <a href="https://www.palminfotech.com/odoo-vs-custom-erp">exactly the case where custom wins</a>,
+    and it is the part a migration would destroy.
+  </p>
+  <p>The split I'd recommend:</p>
+  <ul>
+    <li><strong>Keep and invest:</strong> CRM, enquiries, offers/CPQ, products &amp; BOQ, work orders, the analytics suite.</li>
+    <li><strong>Build properly, once:</strong> stock ledger, audit trail, RBAC enforcement, tax structure, invoicing. These are foundations, not features — they don't get cheaper later.</li>
+    <li><strong>Integrate, don't build:</strong> general ledger and statutory reporting (Tally/Zoho Books export), e-invoice IRN and e-way bill (IRP provider API).</li>
+    <li><strong>Defer until it hurts:</strong> MRP, capacity scheduling, multi-warehouse.</li>
+  </ul>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Window</th><th>Focus</th><th>Outcome</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">Week 1 ✓</td><td>Tier 0 in full — <b>done</b></td><td>Debug endpoint removed, RBAC enforced on 103 routes, role escalation closed, login throttled, SO status split, WO double-count fixed, 3 correctness bugs fixed, 62 tests added</td></tr>
+      <tr><td class="mono">Weeks 2–7</td><td>Stock ledger + audit trail + material FKs + numbering series + Alembic</td><td>Every stock number traceable to a cause and a person</td></tr>
+      <tr><td class="mono">Weeks 8–20</td><td>Company profile → tax master → invoice document → e-invoice/e-way</td><td>Legally correct tax documents, filed without manual re-entry</td></tr>
+      <tr><td class="mono">Months 6–9</td><td>Payments table, AR aging, credit limits, valuation, Tally export</td><td>Collections and true product cost become visible</td></tr>
+      <tr><td class="mono">Months 9–15</td><td>Batch traceability + inspection, reorder points, BOM revisions</td><td>EN-131 audit-ready, recall scope boundable</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    The original closing line of this document was “if you only do one thing, wire up
+    <code>require_module</code>.” That is done. <strong>The one thing now is the stock
+    ledger.</strong> Everything in Tier 2 through Tier 4 that you would actually want —
+    valuation, COGS, batch traceability, multi-warehouse, ITC-04 challan tracking — needs a
+    record of stock <em>movement</em>, and none of it can be retrofitted onto a mutable balance
+    column. It is also the cheapest it will ever be: every order, work order and receipt you
+    record between now and then is history you cannot reconstruct later.
+  </p>
+</section>
+
+<footer>
+  <p>
+    Findings from a static audit of <code>ERP/backend</code> and <code>ERP/web</code> at
+    12&nbsp;Sep&nbsp;2026. Line references are to that revision. Market comparison drawn from
+    <a href="https://www.erpresearch.com/erp/erpnext/manufacturing-management">ERPNext Manufacturing</a>,
+    <a href="https://erpdrive.in/blog/best-erp-software-msme-manufacturers-india-2026.html">Indian MSME ERP guides</a>,
+    <a href="https://eloerp.net/blog/erpnext-vs-odoo-vs-zoho-cloud-erp">ERPNext vs Odoo vs Zoho</a>,
+    <a href="https://docs.indiacompliance.app/blog/posts/post5">India Compliance</a>, and
+    <a href="https://www.gartner.com/reviews/market/configure-price-quote-applications">Gartner CPQ Peer Insights</a>.
+    Effort estimates assume one developer familiar with the codebase.
+  </p>
+</footer>
+
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById('themeToggle');
+    btn.addEventListener('click', function () {
+      var sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var cur = root.getAttribute('data-theme') || (sysDark ? 'dark' : 'light');
+      root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    });
+  })();
+</script>
+
+</body>
+</html>

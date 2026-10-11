@@ -33,11 +33,11 @@ Sentry.init({
     /^Non-Error (promise rejection|exception)/,
   ],
 
-  // Only capture errors originating from our own scripts
-  allowUrls: [
-    /https?:\/\/localhost(:\d+)?/,
-    /https?:\/\/erp\.e-safe\.in/,
-  ],
+  // Only capture errors originating from our own scripts.
+  // In development allowUrls is skipped so local chunk URLs aren't filtered out.
+  ...(process.env.NODE_ENV === "production" && {
+    allowUrls: [/https?:\/\/erp\.e-safe\.in/],
+  }),
 
   // ── Breadcrumb scrubbing ────────────────────────────────────────────────────
   beforeBreadcrumb: scrubBreadcrumb,
