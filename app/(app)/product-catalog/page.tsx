@@ -159,6 +159,16 @@ export default function ProductCatalogPage() {
     }
   }
 
+  function moveSpec(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    setProductSpecs(prev => {
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
   const pages = Math.ceil(total / PAGE_SIZE);
   const filteredSpecCatalog = specCatalog.filter(s =>
     !specSearch.trim() || s.name.toLowerCase().includes(specSearch.toLowerCase())
@@ -318,16 +328,23 @@ export default function ProductCatalogPage() {
                 Choose which specifications appear as fillable fields on offer line items for this product.
               </p>
 
-              {/* Current specs */}
+              {/* Current specs — ordered list */}
               {productSpecs.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {productSpecs.map(s => (
-                    <span key={s.specification_id}
-                      className="inline-flex items-center gap-1 rounded-full bg-accent/20 px-2 py-0.5 text-xs text-accent">
-                      {s.spec_name}
+                <div className="flex flex-col gap-1 rounded-lg border border-surface-border overflow-hidden">
+                  {productSpecs.map((s, i) => (
+                    <div key={s.specification_id}
+                      className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5">
+                      <span className="w-4 shrink-0 text-right text-slate-500 font-mono">{i + 1}</span>
+                      <span className="flex-1 text-slate-200">{s.spec_name}</span>
+                      <div className="flex gap-0.5">
+                        <button onClick={() => moveSpec(i, -1)} disabled={i === 0}
+                          className="px-1 text-slate-500 hover:text-white disabled:opacity-20">▲</button>
+                        <button onClick={() => moveSpec(i, 1)} disabled={i === productSpecs.length - 1}
+                          className="px-1 text-slate-500 hover:text-white disabled:opacity-20">▼</button>
+                      </div>
                       <button onClick={() => toggleSpec(s.specification_id, s.spec_name)}
-                        className="hover:text-red-400">✕</button>
-                    </span>
+                        className="text-slate-500 hover:text-red-400">✕</button>
+                    </div>
                   ))}
                 </div>
               )}
