@@ -590,7 +590,7 @@ export default function OffersPage() {
     try {
       await api(`/api/v1/offers/${offerId}/call-remarks`, {
         method: "PATCH",
-        body: JSON.stringify({ remarks: remarks || null }),
+        json: { remarks: remarks || null },
       });
     } catch {
       // silently ignore — the optimistic update stays
