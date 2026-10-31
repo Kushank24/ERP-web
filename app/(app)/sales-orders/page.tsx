@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, FormEvent, useRef } from "re
 import { api, apiFormData } from "@/lib/api";
 import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
+import { RoundOffControl, RoundOffMode, roundOffDelta } from "@/components/RoundOffControl";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -57,6 +58,9 @@ type SODetail = {
   payment_amount: number | null;
   total_amount: number;
   additional_costs: AdditionalCost[];
+  /** Signed delta applied to the grand total, in (-1, 1). */
+  round_off: number;
+  round_off_mode: RoundOffMode;
   lines: SOLine[];
   invoice_document: SODocument | null;
   eway_bill_document: SODocument | null;
@@ -620,7 +624,11 @@ export default function SalesOrdersPage() {
   );
   const detailExtraCosts = useMemo(() => acItems.reduce((s, c) => s + (c.amount || 0), 0), [acItems]);
   const detailGSTAmount = detail ? ((detailSubtotal + detailExtraCosts) * detail.gst_rate) / 100 : 0;
-  const detailGrandTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
+  // Base = the grand total before round-off; the stored delta is derived from
+  // it server-side, so the two always add up to what the DB holds.
+  const detailBaseTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
+  const detailRoundOff = detail?.round_off ?? 0;
+  const detailGrandTotal = detailBaseTotal + detailRoundOff;
 
   const preFiltered = useMemo(() => rows.filter((r) => {
     if (colFilters.invoice && !r.invoice_number.toLowerCase().includes(colFilters.invoice.toLowerCase())) return false;
@@ -630,6 +638,11 @@ export default function SalesOrdersPage() {
   }), [rows, colFilters]);
   const { sorted: filteredRows, sortKey: soSortKey, sortDir: soSortDir, toggleSort: toggleSOSort } =
     useSortedData<SORow>(preFiltered, "sales_date", "desc");
+
+  /** Keep the list row's total in step with the detail pane. */
+  const applyRowTotal = useCallback((id: number, total: number) => {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, total_amount: total } : r)));
+  }, []);
 
   // ── Update payment status (1=Not Received, 2=Partially Received, 3=Received) ──
   async function handlePaymentUpdate(paymentStatus: number, amountOverride?: number | null) {
@@ -1846,12 +1859,55 @@ export default function SalesOrdersPage() {
                           {fmt(detailGSTAmount)}
                         </span>
                       </div>
+                      {detailRoundOff !== 0 && (
+                        <div className="flex items-center justify-between text-sm text-slate-400">
+                          <span>Round Off</span>
+                          <span className="font-mono">
+                            {detailRoundOff < 0 ? "−" : "+"}
+                            {fmt(Math.abs(detailRoundOff))}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between border-t border-surface-border pt-2.5 text-base font-semibold text-white">
                         <span>Grand Total</span>
                         <span className="font-mono text-accent">
                           {fmt(detailGrandTotal)}
                         </span>
                       </div>
+                      <RoundOffControl
+                        baseTotal={detailBaseTotal}
+                        mode={detail.round_off_mode ?? "none"}
+                        onApply={async (mode) => {
+                          // Move the summary now, save in the background — the
+                          // delta is the same arithmetic the server applies.
+                          const delta = roundOffDelta(detailBaseTotal, mode);
+                          const optimistic = {
+                            ...detail,
+                            round_off: delta,
+                            round_off_mode: mode,
+                            total_amount: Math.round((detailBaseTotal + delta) * 100) / 100,
+                          };
+                          setDetail(optimistic);
+                          applyRowTotal(optimistic.id, optimistic.total_amount);
+                          try {
+                            const updated = await api<SODetail>(
+                              `/api/v1/sales-orders/${detail.id}/round-off`,
+                              { method: "PATCH", json: { mode } },
+                            );
+                            setDetail(updated);
+                            applyRowTotal(updated.id, updated.total_amount);
+                          } catch (err) {
+                            // Put the saved figures back; the write didn't land.
+                            setDetail(detail);
+                            applyRowTotal(detail.id, detail.total_amount);
+                            alert(
+                              err instanceof Error
+                                ? `Could not save the round-off: ${err.message}`
+                                : "Could not save the round-off.",
+                            );
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 </>

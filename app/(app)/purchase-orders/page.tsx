@@ -6,6 +6,7 @@ import { useSortedData } from "@/lib/useSortedData";
 import { SortHeader } from "@/components/SortHeader";
 import { MaterialCombobox } from "@/components/MaterialCombobox";
 import { STOCK_UNITS } from "@/lib/units";
+import { RoundOffControl, RoundOffMode, roundOffDelta } from "@/components/RoundOffControl";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -48,6 +49,9 @@ type PODetail = {
   bill_numbers: string | null;
   delivery_details: Record<string, string> | null;
   additional_costs: AdditionalCost[];
+  /** Signed delta applied to the grand total, in (-1, 1). */
+  round_off: number;
+  round_off_mode: RoundOffMode;
   lines: POLine[];
   /**
    * Returned by /receive and /status when a received quantity could not be
@@ -580,7 +584,11 @@ export default function PurchaseOrdersPage() {
     : 0;
   const detailExtraCosts = acItems.reduce((s, c) => s + (c.amount || 0), 0);
   const detailGSTAmount = detail ? ((detailSubtotal + detailExtraCosts) * detail.gst_rate) / 100 : 0;
-  const detailGrandTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
+  // Base = the grand total before round-off; the stored delta is derived from
+  // it server-side, so the two always add up to what the DB holds.
+  const detailBaseTotal = detailSubtotal + detailExtraCosts + detailGSTAmount;
+  const detailRoundOff = detail?.round_off ?? 0;
+  const detailGrandTotal = detailBaseTotal + detailRoundOff;
 
   const { sorted: filteredRows, sortKey: poSortKey, sortDir: poSortDir, toggleSort: togglePOSort } =
     useSortedData<PORow>(rows, "created_at", "desc");
@@ -1657,12 +1665,50 @@ export default function PurchaseOrdersPage() {
                           {fmt(detailGSTAmount)}
                         </span>
                       </div>
+                      {detailRoundOff !== 0 && (
+                        <div className="flex items-center justify-between text-sm text-slate-400">
+                          <span>Round Off</span>
+                          <span className="font-mono">
+                            {detailRoundOff < 0 ? "−" : "+"}
+                            {fmt(Math.abs(detailRoundOff))}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between border-t border-surface-border pt-3 text-lg font-bold text-white">
                         <span>Grand Total</span>
                         <span className="font-mono text-accent">
                           {fmt(detailGrandTotal)}
                         </span>
                       </div>
+                      <RoundOffControl
+                        baseTotal={detailBaseTotal}
+                        mode={detail.round_off_mode ?? "none"}
+                        onApply={async (mode) => {
+                          // Move the summary now, save in the background — the
+                          // delta is the same arithmetic the server applies.
+                          setDetail({
+                            ...detail,
+                            round_off: roundOffDelta(detailBaseTotal, mode),
+                            round_off_mode: mode,
+                          });
+                          try {
+                            setDetail(
+                              await api<PODetail>(
+                                `/api/v1/purchase-orders/${detail.id}/round-off`,
+                                { method: "PATCH", json: { mode } },
+                              ),
+                            );
+                          } catch (err) {
+                            // Put the saved figures back; the write didn't land.
+                            setDetail(detail);
+                            alert(
+                              err instanceof Error
+                                ? `Could not save the round-off: ${err.message}`
+                                : "Could not save the round-off.",
+                            );
+                          }
+                        }}
+                      />
                     </div>
                   </div>
 
