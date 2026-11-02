@@ -1561,7 +1561,7 @@ export default function PurchaseOrdersPage() {
                                         value={receiveMap[l.id] || ""}
                                         onChange={(e) => setReceiveMap({...receiveMap, [l.id]: e.target.value})}
                                         className="w-20 rounded border border-surface-border bg-[#0b0f14] px-2 py-1 text-xs text-white text-center outline-none transition focus:border-accent"
-                                        placeholder={`Max ${l.length_weight_nos - (l.delivered_qty || 0)}`}
+                                        placeholder={`${l.length_weight_nos - (l.delivered_qty || 0)} Max`}
                                       />
                                     )}
                                   </td>
