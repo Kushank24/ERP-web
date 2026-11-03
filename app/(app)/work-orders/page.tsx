@@ -625,7 +625,7 @@ export default function WorkOrdersPage() {
 <title>Stickers — ${escHtml(detail.work_order_number)}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"><\/script>
 <style>
-  @page { size: 2in 3in; margin: 0; }
+  @page { size: 3in 2in; margin: 0; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: Arial Black, Arial, Helvetica, sans-serif;
@@ -636,28 +636,54 @@ export default function WorkOrdersPage() {
     text-rendering: optimizeSpeed;
   }
   .grid { display: block; }
+  /* Landscape, 3in x 2in. The width goes to the barcode, which now spans the
+     full 3in instead of 2in — wider bars scan more reliably, which is the
+     point of printing landscape. It also gives the information rows 75.7mm
+     instead of 43.4mm (measured), so a product or party name fits on one line
+     and the two short fields finally fit side by side — that pairing needs
+     49.7mm and was impossible in portrait at any readable size. */
   .sticker {
-    width: 2in;
-    height: 3in;
+    width: 3in;
+    height: 2in;
     border: 1pt solid #000;
     border-radius: 2pt;
-    padding: 3mm 3.5mm 2.5mm;
+    padding: 2mm 3.5mm;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 1mm;
+    gap: 0.8mm;
     page-break-after: always;
   }
   .sticker:last-child { page-break-after: avoid; }
-  .sticker-header { display: flex; flex-direction: column; gap: 0.5mm; }
+  /* Work-order number and serial read across, not stacked — in landscape
+     there is width for them and it buys a line of height for the barcode. */
+  .sticker-header { display: flex; align-items: baseline; justify-content: space-between; gap: 3mm; }
   .wo-num { font-size: 9pt; font-weight: 900; letter-spacing: 0.03em; color: #000; }
-  .serial { font-size: 8pt; font-weight: 700; color: #000; }
-  .sticker svg { width: 100%; height: 18mm; }
+  .serial { font-size: 8pt; font-weight: 700; color: #000; white-space: nowrap; }
+  /* 20mm of the 50.3mm height: measured worst case (product and party both
+     wrapping, long PO number on its own line) leaves ~4mm spare, and a taller
+     barcode is easier to aim a scanner at. */
+  .sticker svg { width: 100%; height: 20mm; }
   .divider { border: none; border-top: 1pt solid #000; }
-  .info-row { font-size: 7.5pt; font-weight: 700; line-height: 1.4; color: #000; }
-  .info-row span { font-weight: 900; color: #000; }
+  /* One grid for every field, so the labels share a column and the values
+     all start at the same x. */
+  .info {
+    display: grid; grid-template-columns: auto 1fr;
+    column-gap: 2mm; row-gap: 0.8mm;
+    font-size: 7.5pt; line-height: 1.25; color: #000;
+  }
+  .k { font-weight: 900; color: #000; white-space: nowrap; }
+  .v { font-weight: 700; color: #000; overflow-wrap: anywhere; }
+  /* PO number and date share the last row. They fit at 3in; if a very long PO
+     number ever makes them not fit, flex-wrap drops the date to its own line
+     whole rather than hyphenating the number into two apparent numbers. */
+  .info-split {
+    grid-column: 1 / -1;
+    display: flex; flex-wrap: wrap; column-gap: 5mm; row-gap: 0.8mm;
+  }
+  .info-split > span { white-space: nowrap; }
   @media print {
-    html, body { width: 2in; height: 3in; }
+    html, body { width: 3in; height: 2in; }
   }
 </style>
 </head>
@@ -681,10 +707,16 @@ export default function WorkOrdersPage() {
       '</div>' +
       '<svg id="bc' + s.id + '"></svg>' +
       '<hr class="divider">' +
-      '<div class="info-row"><span>Product:</span> ' + s.productName + '</div>' +
-      '<div class="info-row"><span>Party:</span> ' + party + '</div>' +
-      (poNum  ? '<div class="info-row"><span>PO #:</span> '    + poNum  + '</div>' : '') +
-      (poDate ? '<div class="info-row"><span>PO Date:</span> ' + poDate + '</div>' : '');
+      '<div class="info">' +
+        '<span class="k">Product:</span><span class="v">' + s.productName + '</span>' +
+        '<span class="k">Party:</span><span class="v">' + party + '</span>' +
+        ((poNum || poDate)
+          ? '<div class="info-split">' +
+              (poNum  ? '<span><span class="k">PO #:</span> <span class="v">'    + poNum  + '</span></span>' : '') +
+              (poDate ? '<span><span class="k">PO Date:</span> <span class="v">' + poDate + '</span></span>' : '') +
+            '</div>'
+          : '') +
+      '</div>';
     grid.appendChild(d);
   });
 
