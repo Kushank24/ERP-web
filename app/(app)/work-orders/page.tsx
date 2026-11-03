@@ -658,19 +658,39 @@ export default function WorkOrdersPage() {
   /* Work-order number and serial read across, not stacked — in landscape
      there is width for them and it buys a line of height for the barcode. */
   .sticker-header { display: flex; align-items: baseline; justify-content: space-between; gap: 3mm; }
-  .wo-num { font-size: 9pt; font-weight: 900; letter-spacing: 0.03em; color: #000; }
-  .serial { font-size: 8pt; font-weight: 700; color: #000; white-space: nowrap; }
-  /* 20mm of the 50.3mm height: measured worst case (product and party both
-     wrapping, long PO number on its own line) leaves ~4mm spare, and a taller
-     barcode is easier to aim a scanner at. */
-  .sticker svg { width: 100%; height: 20mm; }
+  .wo-num { font-size: 12pt; font-weight: 900; letter-spacing: 0.03em; color: #000; }
+  .serial { font-size: 10.5pt; font-weight: 700; color: #000; white-space: nowrap; }
+  /* Fills the space it is given, and takes whatever the text does not use.
+     JsBarcode emits viewBox="0 0 514 65" with the default
+     preserveAspectRatio, so fitted to the label width the bars drew only
+     9.6mm tall inside a 22.5mm box — 12.9mm of empty space no CSS height
+     could reach. That was the whitespace on the printed sticker.
+     preserveAspectRatio="none" (set on the element after JsBarcode runs)
+     makes the bars stretch to the box exactly. Stretching a 1D barcode
+     vertically is safe — only bar widths carry the data. */
+  .sticker svg {
+    width: 100%;
+    /* An explicit tall height, not flex-grow: as a replaced element the
+       SVG sizes to its own aspect ratio and refuses to grow, which left
+       the slack at the bottom of the label. Starting tall and letting
+       flex shrink it is what actually fills the sticker. */
+    height: 26mm; min-height: 10mm;
+  }
   .divider { border: none; border-top: 1pt solid #000; }
+  /* Was drawn inside the SVG, where fitting to the label width rendered it
+     ~1.3mm tall — present but unreadable. */
+  .bc-text { font-size: 6.5pt; font-weight: 700; letter-spacing: 0.02em; text-align: center; color: #000; }
   /* One grid for every field, so the labels share a column and the values
      all start at the same x. */
   .info {
     display: grid; grid-template-columns: auto 1fr;
     column-gap: 2mm; row-gap: 0.8mm;
-    font-size: 7.5pt; line-height: 1.25; color: #000;
+    font-size: 9.5pt; line-height: 1.2; color: #000;
+    /* Upper bound. The fit pass below drops it per sticker, never
+       below 7pt. Measured: 7.5pt covers everything except the one
+       extreme where the 60-character product, the 65-character party and
+       a 24-character PO number all land on the same label, which needs
+       7pt. Most stickers print larger than the 7.5pt this used to be. */
   }
   .k { font-weight: 900; color: #000; white-space: nowrap; }
   .v { font-weight: 700; color: #000; overflow-wrap: anywhere; }
@@ -700,12 +720,14 @@ export default function WorkOrdersPage() {
   stickers.forEach(s => {
     const d = document.createElement('div');
     d.className = 'sticker';
+    d.id = 'st' + s.id;
     d.innerHTML =
       '<div class="sticker-header">' +
         '<span class="wo-num">' + wo + '</span>' +
         '<span class="serial">' + s.productOf + '</span>' +
       '</div>' +
       '<svg id="bc' + s.id + '"></svg>' +
+      '<div class="bc-text">' + s.barcode + '</div>' +
       '<hr class="divider">' +
       '<div class="info">' +
         '<span class="k">Product:</span><span class="v">' + s.productName + '</span>' +
@@ -724,13 +746,33 @@ export default function WorkOrdersPage() {
     JsBarcode('#bc' + s.id, s.barcode, {
       format: 'CODE128',
       width: 2,
-      height: 50,
-      fontSize: 9,
-      margin: 2,
-      displayValue: true,
+      height: 100,
+      margin: 0,
+      // The number is printed as HTML below the bars instead — inside the SVG
+      // it was scaled down with the drawing to about 1.3mm.
+      displayValue: false,
       lineColor: '#000',
       background: '#fff',
     });
+    // Must be set after JsBarcode, which rewrites the element's attributes.
+    document.getElementById('bc' + s.id).setAttribute('preserveAspectRatio', 'none');
+  });
+
+  // Fit pass: give each sticker the largest text its own data allows.
+  // A uniform size cannot win here — 8pt clips the longest real product and
+  // party names, while 7.5pt wastes the label on the short ones, and product
+  // names run from 8 to 60 characters. Runs after JsBarcode so the barcode's
+  // height is already reserved; the barcode gives up height only as far as
+  // its 10mm floor, because an unscannable sticker is a useless one.
+  // Measured on real data: ~10.6mm for a typical label, 14.8mm for a short
+  // one, 10.2mm for the longest names there are.
+  stickers.forEach(s => {
+    const el = document.getElementById('st' + s.id);
+    const info = el && el.querySelector('.info');
+    if (!info) return;
+    for (let pt = 9.5; pt > 7 && el.scrollHeight > el.clientHeight; pt -= 0.5) {
+      info.style.fontSize = (pt - 0.5) + 'pt';
+    }
   });
 
   window.addEventListener('load', () => window.print());
